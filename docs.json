@@ -78,6 +78,8 @@
               "api/students/import",
               "api/students/details",
               "api/students/update",
+              "api/students/change-status",
+              "api/students/status-log",
               "api/students/set-base-id"
             ]
           },

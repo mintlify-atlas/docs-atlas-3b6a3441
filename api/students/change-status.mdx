@@ -1,0 +1,136 @@
+---
+title: 'Change Student Status'
+api: 'PUT /alumnos/{matricula}/estatus'
+description: 'Update a student status with optional evidence file and automatic status log creation'
+---
+
+This endpoint updates a student's status (e.g., active, baja, baja_temporal) and automatically creates a status change log entry. Evidence files are required for certain status changes like "baja" or "baja_temporal".
+
+## Path Parameters
+
+<ParamField path="matricula" type="string" required>
+  Student's enrollment number (8-digit identifier)
+</ParamField>
+
+## Request Body (multipart/form-data)
+
+<ParamField body="status_id" type="integer" required>
+  ID of the new student status from the student_statuses catalog
+</ParamField>
+
+<ParamField body="usuario_id" type="string">
+  Identifier of the user making the change (defaults to "Sistema Desconocido" if not provided)
+</ParamField>
+
+<ParamField body="evidence_file" type="file">
+  Evidence file for the status change. **Required** when changing to 'baja' or 'baja_temporal' status
+</ParamField>
+
+## Response
+
+<ResponseField name="message" type="string">
+  Success confirmation message
+</ResponseField>
+
+<ResponseField name="nuevo_estatus" type="string">
+  Name of the new status applied
+</ResponseField>
+
+## Behavior
+
+1. **Status Validation**: Verifies the student exists and the new status is valid
+2. **Evidence Requirement**: Enforces evidence file upload for 'baja' and 'baja_temporal' statuses
+3. **File Storage**: Saves the evidence file to the database if provided
+4. **Status Update**: Updates the student's status_id
+5. **Audit Log**: Creates a StudentStatusLog entry with:
+   - Previous status ID
+   - New status ID
+   - User who made the change
+   - Evidence file reference (if provided)
+   - Timestamp
+
+## Example Request
+
+```bash cURL
+curl -X PUT "http://localhost:8000/alumnos/20240001/estatus" \
+  -F "status_id=2" \
+  -F "usuario_id=admin@unid.mx" \
+  -F "evidence_file=@/path/to/document.pdf"
+```
+
+```python Python
+import requests
+
+url = "http://localhost:8000/alumnos/20240001/estatus"
+files = {
+    'evidence_file': open('document.pdf', 'rb')
+}
+data = {
+    'status_id': 2,
+    'usuario_id': 'admin@unid.mx'
+}
+
+response = requests.put(url, files=files, data=data)
+print(response.json())
+```
+
+## Example Response
+
+```json Success Response
+{
+  "message": "Estatus y Log actualizados correctamente",
+  "nuevo_estatus": "baja"
+}
+```
+
+## Error Responses
+
+<ResponseField name="404" type="error">
+  Student not found
+  ```json
+  {
+    "detail": "Alumno no encontrado"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="400" type="error">
+  Invalid status or missing evidence file
+  ```json
+  {
+    "detail": "Se requiere un archivo de evidencia para este estatus."
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="500" type="error">
+  Database or file processing error
+  ```json
+  {
+    "detail": "Error al actualizar estatus: [error details]"
+  }
+  ```
+</ResponseField>
+
+## Status Change Workflow
+
+<Steps>
+  <Step title="Select New Status">
+    Choose the appropriate status from the catalog (use GET /catalogos/estatus)
+  </Step>
+  <Step title="Prepare Evidence (if required)">
+    For 'baja' or 'baja_temporal', prepare a PDF or image file documenting the reason
+  </Step>
+  <Step title="Submit Change">
+    Send the PUT request with status_id, user identifier, and evidence file
+  </Step>
+  <Step title="Verify Update">
+    Check the response for confirmation and retrieve the log with GET /alumnos/{matricula}/ultimo-log-estatus
+  </Step>
+</Steps>
+
+## Related Endpoints
+
+- [Get Status Catalog](/api/catalogs/student-status) - List all available statuses
+- [Get Last Status Log](/api/students/status-log) - Retrieve the most recent status change
+- [Get Student Details](/api/students/details) - View current student status

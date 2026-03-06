@@ -1,0 +1,139 @@
+---
+title: 'Get Last Status Log'
+api: 'GET /alumnos/{matricula}/ultimo-log-estatus'
+description: 'Retrieve the most recent status change log entry for a student'
+---
+
+This endpoint returns the latest status change log for a student, including who made the change, when it occurred, and any associated evidence file.
+
+## Path Parameters
+
+<ParamField path="matricula" type="string" required>
+  Student's enrollment number (8-digit identifier)
+</ParamField>
+
+## Response
+
+Returns the most recent status change log entry, or `null` if no logs exist for the student.
+
+<ResponseField name="id" type="integer">
+  Unique identifier for the log entry
+</ResponseField>
+
+<ResponseField name="previous_status" type="string">
+  Name of the previous status (e.g., "activo", "baja")
+</ResponseField>
+
+<ResponseField name="new_status" type="string">
+  Name of the new status applied
+</ResponseField>
+
+<ResponseField name="changed_by_user" type="string">
+  Identifier or email of the user who made the change
+</ResponseField>
+
+<ResponseField name="changed_at" type="string">
+  Timestamp when the change occurred (ISO 8601 format)
+</ResponseField>
+
+<ResponseField name="evidence_file_id" type="integer">
+  ID of the evidence file in the files table, if one was uploaded
+</ResponseField>
+
+<ResponseField name="evidence_file_name" type="string">
+  Original filename of the evidence document, if available
+</ResponseField>
+
+## Example Request
+
+```bash cURL
+curl -X GET "http://localhost:8000/alumnos/20240001/ultimo-log-estatus"
+```
+
+```python Python
+import requests
+
+url = "http://localhost:8000/alumnos/20240001/ultimo-log-estatus"
+response = requests.get(url)
+
+if response.json():
+    log = response.json()
+    print(f"Status changed from {log['previous_status']} to {log['new_status']}")
+    print(f"Changed by: {log['changed_by_user']}")
+else:
+    print("No status change logs found")
+```
+
+```javascript JavaScript
+fetch('http://localhost:8000/alumnos/20240001/ultimo-log-estatus')
+  .then(response => response.json())
+  .then(log => {
+    if (log) {
+      console.log(`Status: ${log.previous_status} → ${log.new_status}`);
+      console.log(`Changed by: ${log.changed_by_user} at ${log.changed_at}`);
+    }
+  });
+```
+
+## Example Response
+
+```json With Evidence File
+{
+  "id": 42,
+  "previous_status": "activo",
+  "new_status": "baja",
+  "changed_by_user": "admin@unid.mx",
+  "changed_at": "2024-03-15 14:23:17",
+  "evidence_file_id": 157,
+  "evidence_file_name": "justificacion_baja.pdf"
+}
+```
+
+```json Without Evidence File
+{
+  "id": 38,
+  "previous_status": "baja_temporal",
+  "new_status": "activo",
+  "changed_by_user": "coordinador@unid.mx",
+  "changed_at": "2024-02-10 09:15:42",
+  "evidence_file_id": null,
+  "evidence_file_name": null
+}
+```
+
+```json No Logs
+null
+```
+
+## Use Cases
+
+### Audit Trail
+Review the history of status changes for compliance and record-keeping purposes.
+
+### Evidence Retrieval
+Get the file ID to download the evidence document:
+```python
+log = response.json()
+if log and log['evidence_file_id']:
+    file_url = f"http://localhost:8000/alumnos/archivos/{log['evidence_file_id']}"
+    # Download or display the evidence file
+```
+
+### Status Change Verification
+After updating a student's status, verify the change was logged correctly.
+
+## Notes
+
+<Note>
+  This endpoint returns only the **most recent** log entry. For a complete status change history, query the `student_status_logs` table directly or implement a separate endpoint.
+</Note>
+
+<Info>
+  The `changed_at` timestamp is generated automatically by the database when the log entry is created.
+</Info>
+
+## Related Endpoints
+
+- [Change Student Status](/api/students/change-status) - Update a student's status
+- [Get Status Catalog](/api/catalogs/student-status) - List available status options
+- [Get Evidence File](/api/files/get-file) - Download the evidence document
