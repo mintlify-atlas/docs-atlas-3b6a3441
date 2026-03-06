@@ -1,0 +1,61 @@
+---
+title: 'Get Student Status Catalog'
+api: 'GET /catalogos/estatus'
+description: 'Retrieve the complete catalog of student status options'
+---
+
+## Description
+
+This endpoint returns all available student status types from the system catalog. Student statuses are used to track the current state of a student's enrollment (active, inactive, withdrawn, etc.).
+
+## Response
+
+Returns an array of student status objects.
+
+<ResponseField name="id" type="integer" required>
+  Unique identifier for the status
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Status name (e.g., "activo", "baja", "egresado")
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Detailed description of what the status represents
+</ResponseField>
+
+## Example Request
+
+```bash
+curl -X GET "http://localhost:8000/catalogos/estatus" \
+  -H "accept: application/json"
+```
+
+## Example Response
+
+```json
+[
+  {
+    "id": 1,
+    "name": "activo",
+    "description": "Student is currently enrolled and attending classes"
+  },
+  {
+    "id": 2,
+    "name": "baja",
+    "description": "Student has withdrawn from the institution"
+  },
+  {
+    "id": 3,
+    "name": "egresado",
+    "description": "Student has graduated from their program"
+  }
+]
+```
+
+## Use Cases
+
+- Populating dropdown lists in student registration forms
+- Filtering students by their current status
+- Displaying status information in student profiles
+- Generating reports based on student enrollment status

@@ -1,0 +1,249 @@
+---
+title: Student Management
+description: Register students manually with photo and certificate uploads, manage profiles, and track student information
+---
+
+## Overview
+
+The student management system provides comprehensive functionality for registering, listing, and updating student profiles. Each student is assigned a unique auto-generated matricula (student ID) and can have associated files like profile photos and certificates.
+
+## Student Registration
+
+### Manual Registration
+
+Students can be registered individually through the `/alumnos/register` endpoint with multipart form data including personal information and file uploads.
+
+```python
+@router.post("/register", status_code=status.HTTP_201_CREATED)
+def register_student(
+    student_data: str = Form(...),
+    foto_perfil: UploadFile = File(...),
+    certificado: UploadFile = File(None),
+    db: Session = Depends(get_db)
+):
+    try:
+        data_dict = json.loads(student_data)
+        student_in = StudentCreate(**data_dict)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error en datos: {str(e)}")
+```
+
+### Automatic Matricula Generation
+
+The system automatically generates sequential matriculas based on the highest existing value in the database:
+
+```python
+max_m = db.query(func.max(Student.matricula)).scalar()
+final_matricula = str(int(max_m) + 1) if max_m and max_m.isdigit() else "20240001"
+```
+
+<Note>
+The matricula is an 8-digit numeric identifier that serves as the primary key. If no students exist, it defaults to "20240001".
+</Note>
+
+### Duplicate Detection
+
+Before creating a student, the system validates that CURP and email are unique:
+
+```python
+alumno_existente = db.query(Student).filter(
+    (Student.curp == student_in.curp) |
+    (Student.email_personal == student_in.email_personal)
+).first()
+
+if alumno_existente:
+    if alumno_existente.curp == student_in.curp:
+        raise HTTPException(status_code=400, detail="Esta CURP ya se encuentra registrada en el sistema.")
+    if alumno_existente.email_personal == student_in.email_personal:
+        raise HTTPException(status_code=400, detail="Este correo personal ya está en uso por otro alumno.")
+```
+
+## File Attachment System
+
+Student registration requires a profile photo and optionally accepts a certificate file. Files are stored in the database using the File model.
+
+### Photo Upload
+
+```python
+# Save photo to files table
+foto_content = foto_perfil.file.read()
+foto_file = FileModel(
+    file_name=foto_perfil.filename,
+    mime_type=foto_perfil.content_type or "image/jpeg",
+    size_bytes=len(foto_content),
+    file_content=foto_content
+)
+db.add(foto_file)
+db.flush()
+
+# Link to student
+new_student = Student(
+    matricula=final_matricula,
+    # ... other fields
+    foto_id=foto_file.id,
+    certificado_id=cert_file_id
+)
+```
+
+<Warning>
+Profile photos are required during registration. Certificate uploads are optional but recommended.
+</Warning>
+
+## Student Listing
+
+The `/alumnos/listado` endpoint provides paginated student lists with search and filter capabilities.
+
+### Pagination and Search
+
+```python
+@router.get("/listado", response_model=dict)
+def listar_alumnos(
+    skip: int = 0,
+    limit: int = 10,
+    busqueda: Optional[str] = Query(
+        None,
+        min_length=3,
+        max_length=50,
+        description="Búsqueda por matrícula o nombre",
+        pattern=r"^[a-zA-Z0-9 áéíóúÁÉÍÓÚñÑ]+$"
+    ),
+    carrera_id: Optional[int] = Query(None, description="ID de la carrera a filtrar"),
+    cuatrimestre: Optional[int] = Query(None, description="Número de cuatrimestre a filtrar"),
+    db: Session = Depends(get_db)
+):
+```
+
+### Search Implementation
+
+The search term is applied to both matricula and full name:
+
+```python
+if busqueda:
+    termino = f"%{busqueda}%"
+    query = query.filter(
+        or_(
+            Student.matricula.ilike(termino),
+            (Student.nombre + " " + Student.apellido_paterno + " " + Student.apellido_materno).ilike(termino)
+        )
+    )
+```
+
+### Response Format
+
+```python
+return {
+    "total": total,
+    "data": [dict(row._mapping) for row in alumnos]
+}
+```
+
+Example response:
+
+```json
+{
+  "total": 150,
+  "data": [
+    {
+      "matricula": "20240001",
+      "nombre_completo": "Juan Pérez García",
+      "carrera": "Ingeniería en Sistemas",
+      "estatus": "activo"
+    }
+  ]
+}
+```
+
+## Student Details and Updates
+
+### Retrieve Student Details
+
+Get complete student information including address:
+
+```python
+@router.get("/detalle/{matricula}")
+def get_student_detail(matricula: str, db: Session = Depends(get_db)):
+    student = db.query(Student).filter(Student.matricula == matricula).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Alumno no encontrado")
+
+    address = db.query(StudentAddress).filter(StudentAddress.student_matricula == matricula).first()
+
+    return {
+        "student": {
+            "matricula": student.matricula,
+            "nombre": student.nombre,
+            # ... other fields
+            "foto_id": student.foto_id,
+            "certificado_id": student.certificado_id
+        },
+        "address": {
+            "calle": address.calle if address else '',
+            # ... other fields
+        }
+    }
+```
+
+### Update Student Profile
+
+The `/alumnos/actualizar/{matricula}` endpoint allows updating student information while preserving matricula and academic history:
+
+```python
+@router.put("/actualizar/{matricula}")
+def update_student(
+    matricula: str,
+    student_data: str = Form(...),
+    foto_perfil: UploadFile = File(None),
+    certificado: UploadFile = File(None),
+    db: Session = Depends(get_db)
+):
+    # Validate uniqueness constraints
+    curp_existente = db.query(Student).filter(
+        Student.curp == nueva_curp, 
+        Student.matricula != matricula
+    ).first()
+    if curp_existente:
+        raise HTTPException(status_code=400, detail="Esta CURP ya está registrada en otro alumno.")
+
+    # Update student fields
+    student.nombre = data_dict.get('nombre', student.nombre)
+    student.apellido_paterno = data_dict.get('apellido_paterno', student.apellido_paterno)
+    # ... other fields
+```
+
+<Note>
+Matricula and promedio_procedencia cannot be modified during updates to preserve academic integrity.
+</Note>
+
+## Student Model Structure
+
+The Student model defined in `/home/daytona/workspace/source/backend/app/models/student.py:1` includes:
+
+```python
+class Student(Base):
+    __tablename__ = "students"
+
+    matricula = Column(String(20), primary_key=True, index=True)
+    nombre = Column(String(100), nullable=False)
+    apellido_paterno = Column(String(100), nullable=False)
+    apellido_materno = Column(String(100), nullable=False)
+    curp = Column(String(18), nullable=False, unique=True)
+    foto_id = Column(BigInteger, ForeignKey("files.id"), nullable=True)
+    email_personal = Column(String(150), nullable=False)
+    email_institucional = Column(String(150), nullable=True)
+    origin_school_id = Column(Integer, ForeignKey("origin_schools.id"), nullable=True)
+    promedio_procedencia = Column(Integer, nullable=False)
+    certificado_id = Column(BigInteger, ForeignKey("files.id"), nullable=True)
+    career_id = Column(Integer, ForeignKey("careers.id"), nullable=False)
+    cuatrimestre_actual = Column(Integer, nullable=False, server_default=text("1"))
+    status_id = Column(Integer, ForeignKey("student_statuses.id"), nullable=False)
+```
+
+## Key Features
+
+- **Automatic ID Generation**: Sequential 8-digit matriculas
+- **Duplicate Prevention**: CURP and email uniqueness validation
+- **File Management**: Database storage for photos and certificates
+- **Advanced Search**: Filter by name, matricula, career, and semester
+- **Pagination**: Configurable page size with total count
+- **Profile Updates**: Modify student data while preserving academic history
+- **Address Management**: Separate address storage linked to student

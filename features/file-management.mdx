@@ -1,0 +1,355 @@
+---
+title: File Management
+description: Store and retrieve student files including photos and certificates directly in the database
+---
+
+## Overview
+
+SESA stores files directly in the MySQL database using MEDIUMBLOB storage. This approach centralizes data management and eliminates the need for separate file system storage. The system supports profile photos, academic certificates, and other document types.
+
+## File Model
+
+The File model defined in `/home/daytona/workspace/source/backend/app/models/file.py:1` stores complete file information:
+
+```python
+from sqlalchemy import Column, BigInteger, String, TIMESTAMP, text
+from sqlalchemy.dialects.mysql import MEDIUMBLOB
+from app.db.database import Base
+
+class File(Base):
+    __tablename__ = "files"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    file_name = Column(String(255), nullable=False)
+    mime_type = Column(String(100), nullable=False)
+    size_bytes = Column(BigInteger, nullable=False)
+    file_content = Column(MEDIUMBLOB, nullable=False)
+    uploaded_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"))
+```
+
+### Storage Specifications
+
+- **Storage Type**: MEDIUMBLOB (16MB maximum)
+- **Primary Key**: Auto-incrementing BigInteger
+- **Metadata**: Filename, MIME type, size, and upload timestamp
+- **Content**: Raw binary data stored in database
+
+<Note>
+MEDIUMBLOB supports files up to 16MB. For larger files, consider LONGBLOB (4GB) or external storage.
+</Note>
+
+## Supported File Types
+
+### Profile Photos
+
+- **MIME Types**: `image/jpeg`, `image/png`, `image/jpg`
+- **Usage**: Student profile pictures
+- **Required**: Yes (during registration)
+
+### Certificates
+
+- **MIME Types**: `application/pdf`, `image/jpeg`, `image/png`
+- **Usage**: Academic certificates from previous schools
+- **Required**: No (optional during registration)
+
+### Other Documents
+
+- **MIME Types**: Configurable based on needs
+- **Usage**: Additional student documentation
+- **Required**: Context-dependent
+
+## File Upload
+
+### During Student Registration
+
+Files are uploaded as part of multipart form data:
+
+```python
+@router.post("/register", status_code=status.HTTP_201_CREATED)
+def register_student(
+    student_data: str = Form(...),
+    foto_perfil: UploadFile = File(...),
+    certificado: UploadFile = File(None),
+    db: Session = Depends(get_db)
+):
+    try:
+        # Read and store profile photo
+        foto_content = foto_perfil.file.read()
+        foto_file = FileModel(
+            file_name=foto_perfil.filename,
+            mime_type=foto_perfil.content_type or "image/jpeg",
+            size_bytes=len(foto_content),
+            file_content=foto_content
+        )
+        db.add(foto_file)
+        db.flush()
+
+        # Store certificate if provided
+        cert_file_id = None
+        if certificado:
+            cert_content = certificado.file.read()
+            cert_file = FileModel(
+                file_name=certificado.filename,
+                mime_type=certificado.content_type or "application/pdf",
+                size_bytes=len(cert_content),
+                file_content=cert_content
+            )
+            db.add(cert_file)
+            db.flush()
+            cert_file_id = cert_file.id
+```
+
+<Warning>
+Always call `db.flush()` after adding file records to generate IDs before linking to student records.
+</Warning>
+
+### During Student Update
+
+Files can be updated individually:
+
+```python
+@router.put("/actualizar/{matricula}")
+def update_student(
+    matricula: str,
+    student_data: str = Form(...),
+    foto_perfil: UploadFile = File(None),
+    certificado: UploadFile = File(None),
+    db: Session = Depends(get_db)
+):
+    # Update photo if new one provided
+    if foto_perfil:
+        foto_content = foto_perfil.file.read()
+        foto_file = FileModel(
+            file_name=foto_perfil.filename,
+            mime_type=foto_perfil.content_type or "image/jpeg",
+            size_bytes=len(foto_content),
+            file_content=foto_content
+        )
+        db.add(foto_file)
+        db.flush()
+        student.foto_id = foto_file.id
+
+    # Update certificate if new one provided
+    if certificado:
+        cert_content = certificado.file.read()
+        cert_file = FileModel(
+            file_name=certificado.filename,
+            mime_type=certificado.content_type or "application/pdf",
+            size_bytes=len(cert_content),
+            file_content=cert_content
+        )
+        db.add(cert_file)
+        db.flush()
+        student.certificado_id = cert_file.id
+```
+
+## File Retrieval
+
+The `/alumnos/archivos/{file_id}` endpoint serves files with appropriate headers:
+
+```python
+@router.get("/archivos/{file_id}")
+def get_archivo(file_id: int, db: Session = Depends(get_db)):
+    archivo = db.query(FileModel).filter(FileModel.id == file_id).first()
+    if not archivo:
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    
+    return Response(
+        content=bytes(archivo.file_content),
+        media_type=archivo.mime_type,
+        headers={"Content-Disposition": f'inline; filename="{archivo.file_name}"'}
+    )
+```
+
+### Response Headers
+
+- **Content-Type**: Set to stored MIME type (e.g., `image/jpeg`, `application/pdf`)
+- **Content-Disposition**: Set to `inline` for browser display with original filename
+
+### Example Usage
+
+```python
+# Retrieve student with files
+student = db.query(Student).filter(Student.matricula == "20240001").first()
+
+# Access file metadata
+if student.foto_id:
+    foto = student.foto
+    print(f"Photo: {foto.file_name} ({foto.size_bytes} bytes)")
+
+if student.certificado_id:
+    cert = student.certificado
+    print(f"Certificate: {cert.file_name} ({cert.size_bytes} bytes)")
+```
+
+## File Metadata
+
+Each file stores comprehensive metadata:
+
+### Filename
+
+```python
+file_name = Column(String(255), nullable=False)
+```
+
+Preserves the original filename for user reference.
+
+### MIME Type
+
+```python
+mime_type = Column(String(100), nullable=False)
+```
+
+Stores content type for proper browser handling:
+- `image/jpeg` - JPEG images
+- `image/png` - PNG images  
+- `application/pdf` - PDF documents
+
+### File Size
+
+```python
+size_bytes = Column(BigInteger, nullable=False)
+```
+
+Stores file size in bytes for:
+- Storage monitoring
+- Quota management
+- Display purposes
+
+### Upload Timestamp
+
+```python
+uploaded_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"))
+```
+
+Automatically tracks when files were uploaded.
+
+## Relationship with Students
+
+The Student model links to files via foreign keys:
+
+```python
+class Student(Base):
+    __tablename__ = "students"
+
+    foto_id = Column(BigInteger, ForeignKey("files.id"), nullable=True)
+    certificado_id = Column(BigInteger, ForeignKey("files.id"), nullable=True)
+    
+    foto = relationship("File", foreign_keys=[foto_id])
+    certificado = relationship("File", foreign_keys=[certificado_id])
+```
+
+<Note>
+Using `foreign_keys` parameter is necessary when multiple relationships point to the same table.
+</Note>
+
+## Example: Complete File Upload Flow
+
+```python
+from fastapi import UploadFile, File, Form
+import io
+
+# Frontend sends multipart/form-data
+# POST /alumnos/register
+# Content-Type: multipart/form-data
+# 
+# student_data: {"nombre": "Juan", ...}
+# foto_perfil: [binary image data]
+# certificado: [binary PDF data]
+
+# Backend processes
+@router.post("/register")
+def register_student(
+    student_data: str = Form(...),
+    foto_perfil: UploadFile = File(...),
+    certificado: UploadFile = File(None),
+    db: Session = Depends(get_db)
+):
+    # 1. Parse JSON data
+    data = json.loads(student_data)
+    
+    # 2. Save photo file
+    photo_bytes = foto_perfil.file.read()
+    photo_record = FileModel(
+        file_name=foto_perfil.filename,
+        mime_type=foto_perfil.content_type,
+        size_bytes=len(photo_bytes),
+        file_content=photo_bytes
+    )
+    db.add(photo_record)
+    db.flush()  # Generate photo_record.id
+    
+    # 3. Save certificate if provided
+    cert_id = None
+    if certificado:
+        cert_bytes = certificado.file.read()
+        cert_record = FileModel(
+            file_name=certificado.filename,
+            mime_type=certificado.content_type,
+            size_bytes=len(cert_bytes),
+            file_content=cert_bytes
+        )
+        db.add(cert_record)
+        db.flush()  # Generate cert_record.id
+        cert_id = cert_record.id
+    
+    # 4. Create student with file references
+    student = Student(
+        matricula="20240001",
+        nombre=data["nombre"],
+        foto_id=photo_record.id,
+        certificado_id=cert_id,
+        # ... other fields
+    )
+    db.add(student)
+    db.commit()
+```
+
+## Advantages of Database Storage
+
+1. **Centralized Management**: All data in one place
+2. **Transactional Integrity**: Files participate in database transactions
+3. **Backup Simplicity**: Single database backup includes files
+4. **Access Control**: Database-level security applies to files
+5. **No File System Permissions**: Eliminates file system complexity
+6. **Referential Integrity**: Foreign keys ensure data consistency
+
+## Considerations
+
+- **Size Limits**: MEDIUMBLOB supports up to 16MB per file
+- **Performance**: Large files may impact query performance
+- **Backup Size**: Database backups include all file content
+- **Memory Usage**: Files loaded entirely into memory during retrieval
+
+<Warning>
+For applications with many large files, consider external storage (S3, file system) with database references instead of BLOB storage.
+</Warning>
+
+## Frontend Integration
+
+Display files using the archivos endpoint:
+
+```jsx
+// React example
+function StudentProfile({ student }) {
+  return (
+    <div>
+      {student.foto_id && (
+        <img 
+          src={`/api/alumnos/archivos/${student.foto_id}`}
+          alt="Profile photo"
+        />
+      )}
+      
+      {student.certificado_id && (
+        <a 
+          href={`/api/alumnos/archivos/${student.certificado_id}`}
+          target="_blank"
+        >
+          View Certificate
+        </a>
+      )}
+    </div>
+  )
+}
+```

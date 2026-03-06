@@ -1,0 +1,209 @@
+---
+title: 'Register Student'
+api: 'POST /alumnos/register'
+description: 'Register a new student with their personal information, address, and files'
+---
+
+This endpoint creates a new student record with auto-generated enrollment number, saves profile photo and certificate files, creates address record, and generates a user account with temporary password. A welcome email is sent to the student's personal email with login credentials.
+
+## Request Body (multipart/form-data)
+
+<ParamField body="student_data" type="string" required>
+  JSON string containing student information with the following structure:
+  
+  ```json
+  {
+    "nombre": "string",
+    "apellido_paterno": "string",
+    "apellido_materno": "string",
+    "curp": "string",
+    "email_personal": "string",
+    "email_institucional": "string",
+    "career_id": "integer",
+    "origin_school_id": "integer",
+    "promedio_procedencia": "number",
+    "status_id": "integer (optional)",
+    "address": {
+      "calle": "string",
+      "numero_domicilio": "string",
+      "colonia": "string",
+      "codigo_postal": "string",
+      "municipio": "string",
+      "estado": "string"
+    }
+  }
+  ```
+</ParamField>
+
+<ParamField body="foto_perfil" type="file" required>
+  Student's profile photo (image file, JPEG/PNG)
+</ParamField>
+
+<ParamField body="certificado" type="file">
+  Student's certificate (PDF file, optional)
+</ParamField>
+
+## Field Descriptions
+
+### Student Data Fields
+
+- **nombre**: Student's first name
+- **apellido_paterno**: Paternal surname
+- **apellido_materno**: Maternal surname
+- **curp**: CURP (18-character unique identifier)
+- **email_personal**: Personal email address (used for login)
+- **email_institucional**: Institutional email (@red.unid.mx)
+- **career_id**: ID of the career/program
+- **origin_school_id**: ID of the origin school
+- **promedio_procedencia**: Previous school average grade
+- **status_id**: Student status ID (defaults to "activo" if not provided)
+
+### Address Fields
+
+- **calle**: Street name
+- **numero_domicilio**: House/building number
+- **colonia**: Neighborhood
+- **codigo_postal**: ZIP code
+- **municipio**: Municipality
+- **estado**: State
+
+## Response
+
+<ResponseField name="status" type="string">
+  Operation status ("success")
+</ResponseField>
+
+<ResponseField name="matricula" type="string">
+  Auto-generated enrollment number (8 digits)
+</ResponseField>
+
+<ResponseField name="temporal_password" type="string">
+  Temporary password generated for the student (10 random characters)
+</ResponseField>
+
+## Example Request
+
+```bash cURL
+curl -X POST "https://api.example.com/alumnos/register" \
+  -F 'student_data={
+    "nombre": "María",
+    "apellido_paterno": "González",
+    "apellido_materno": "López",
+    "curp": "GOLM990515MCCLPR08",
+    "email_personal": "maria.gonzalez@gmail.com",
+    "email_institucional": "maria.gonzalez@red.unid.mx",
+    "career_id": 1,
+    "origin_school_id": 5,
+    "promedio_procedencia": 8.5,
+    "address": {
+      "calle": "Av. Principal",
+      "numero_domicilio": "123",
+      "colonia": "Centro",
+      "codigo_postal": "24000",
+      "municipio": "Campeche",
+      "estado": "Campeche"
+    }
+  }' \
+  -F "foto_perfil=@/path/to/photo.jpg" \
+  -F "certificado=@/path/to/certificate.pdf"
+```
+
+```python Python
+import requests
+import json
+
+url = "https://api.example.com/alumnos/register"
+
+student_data = {
+    "nombre": "María",
+    "apellido_paterno": "González",
+    "apellido_materno": "López",
+    "curp": "GOLM990515MCCLPR08",
+    "email_personal": "maria.gonzalez@gmail.com",
+    "email_institucional": "maria.gonzalez@red.unid.mx",
+    "career_id": 1,
+    "origin_school_id": 5,
+    "promedio_procedencia": 8.5,
+    "address": {
+        "calle": "Av. Principal",
+        "numero_domicilio": "123",
+        "colonia": "Centro",
+        "codigo_postal": "24000",
+        "municipio": "Campeche",
+        "estado": "Campeche"
+    }
+}
+
+files = {
+    "student_data": (None, json.dumps(student_data)),
+    "foto_perfil": open("photo.jpg", "rb"),
+    "certificado": open("certificate.pdf", "rb")
+}
+
+response = requests.post(url, files=files)
+print(response.json())
+```
+
+## Example Response
+
+```json
+{
+  "status": "success",
+  "matricula": "20240025",
+  "temporal_password": "aB3xK9mP2q"
+}
+```
+
+## Automatic Actions
+
+1. **Enrollment Number Generation**: System queries the maximum existing enrollment number and increments by 1. If no students exist, starts with "20240001".
+
+2. **User Account Creation**: Creates a user account with:
+   - Username: enrollment number
+   - Email: student's personal email
+   - Password: 10-character random string (letters + digits)
+   - Role: "alumno" (student)
+   - Flag: `is_temp_password = true`
+
+3. **Welcome Email**: Sends an HTML email to the student's personal email containing:
+   - Enrollment number
+   - Temporary password
+   - Welcome message
+
+4. **Default Values**:
+   - `cuatrimestre_actual`: Set to 1
+   - `status_id`: Set to "activo" status if not provided
+
+## Error Responses
+
+<ResponseField name="400" type="Bad Request">
+  Invalid data format, duplicate CURP, or duplicate email
+</ResponseField>
+
+<ResponseField name="500" type="Internal Server Error">
+  Database error during student creation
+</ResponseField>
+
+```json Duplicate CURP Error
+{
+  "detail": "Esta CURP ya se encuentra registrada en el sistema."
+}
+```
+
+```json Duplicate Email Error
+{
+  "detail": "Este correo personal ya está en uso por otro alumno."
+}
+```
+
+```json Invalid Data Error
+{
+  "detail": "Error en datos: Field required"
+}
+```
+
+```json Database Error
+{
+  "detail": "Error en BD: Connection timeout"
+}
+```

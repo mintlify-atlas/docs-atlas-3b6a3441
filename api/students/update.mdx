@@ -1,0 +1,247 @@
+---
+title: 'Update Student'
+api: 'PUT /alumnos/actualizar/{matricula}'
+description: 'Update an existing student information including personal data, address, and files'
+---
+
+This endpoint updates a student's personal information, address, and optionally replaces their profile photo and certificate. The enrollment number and average grade are protected and cannot be modified to preserve academic history.
+
+## Path Parameters
+
+<ParamField path="matricula" type="string" required>
+  Student's enrollment number (8-digit identifier)
+</ParamField>
+
+## Request Body (multipart/form-data)
+
+<ParamField body="student_data" type="string" required>
+  JSON string containing updated student information:
+  
+  ```json
+  {
+    "nombre": "string",
+    "apellido_paterno": "string",
+    "apellido_materno": "string",
+    "curp": "string",
+    "email_personal": "string",
+    "email_institucional": "string",
+    "career_id": "integer",
+    "origin_school_id": "integer",
+    "address": {
+      "calle": "string",
+      "numero_domicilio": "string",
+      "colonia": "string",
+      "codigo_postal": "string",
+      "municipio": "string",
+      "estado": "string"
+    }
+  }
+  ```
+</ParamField>
+
+<ParamField body="foto_perfil" type="file">
+  New profile photo (image file, optional - only if replacing existing photo)
+</ParamField>
+
+<ParamField body="certificado" type="file">
+  New certificate (PDF file, optional - only if replacing existing certificate)
+</ParamField>
+
+## Field Descriptions
+
+### Updatable Fields
+
+- **nombre**: Student's first name
+- **apellido_paterno**: Paternal surname
+- **apellido_materno**: Maternal surname
+- **curp**: CURP (must be unique across other students)
+- **email_personal**: Personal email (must be unique across other students)
+- **email_institucional**: Institutional email
+- **career_id**: ID of the career/program
+- **origin_school_id**: ID of the origin school
+- **address**: Complete address object with all fields
+
+### Protected Fields
+
+The following fields are intentionally NOT updatable to preserve academic integrity:
+
+- **matricula**: Enrollment number (path parameter, used for identification)
+- **promedio_procedencia**: Previous school average (historical data)
+- **cuatrimestre_actual**: Current semester (managed by academic processes)
+- **status_id**: Student status (managed separately)
+
+## Response
+
+<ResponseField name="status" type="string">
+  Operation status ("success")
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Success message
+</ResponseField>
+
+## Example Request
+
+```bash cURL
+curl -X PUT "https://api.example.com/alumnos/actualizar/20240001" \
+  -F 'student_data={
+    "nombre": "Juan Carlos",
+    "apellido_paterno": "Pérez",
+    "apellido_materno": "García",
+    "curp": "PEGJ950615HCCRNN09",
+    "email_personal": "juancarlos.perez@gmail.com",
+    "email_institucional": "juan.perez@red.unid.mx",
+    "career_id": 1,
+    "origin_school_id": 5,
+    "address": {
+      "calle": "Av. Universidad",
+      "numero_domicilio": "456",
+      "colonia": "Zona Norte",
+      "codigo_postal": "24010",
+      "municipio": "Campeche",
+      "estado": "Campeche"
+    }
+  }' \
+  -F "foto_perfil=@/path/to/new_photo.jpg"
+```
+
+```python Python
+import requests
+import json
+
+url = "https://api.example.com/alumnos/actualizar/20240001"
+
+student_data = {
+    "nombre": "Juan Carlos",
+    "apellido_paterno": "Pérez",
+    "apellido_materno": "García",
+    "curp": "PEGJ950615HCCRNN09",
+    "email_personal": "juancarlos.perez@gmail.com",
+    "email_institucional": "juan.perez@red.unid.mx",
+    "career_id": 1,
+    "origin_school_id": 5,
+    "address": {
+        "calle": "Av. Universidad",
+        "numero_domicilio": "456",
+        "colonia": "Zona Norte",
+        "codigo_postal": "24010",
+        "municipio": "Campeche",
+        "estado": "Campeche"
+    }
+}
+
+files = {
+    "student_data": (None, json.dumps(student_data)),
+    "foto_perfil": open("new_photo.jpg", "rb")
+}
+
+response = requests.put(url, files=files)
+print(response.json())
+```
+
+## Example Response
+
+```json
+{
+  "status": "success",
+  "message": "Alumno actualizado correctamente"
+}
+```
+
+## Validation Rules
+
+### Uniqueness Validation
+
+The endpoint validates that the new CURP and email are not already used by OTHER students:
+
+- **CURP**: Must be unique across all students except the one being updated
+- **Email Personal**: Must be unique across all students except the one being updated
+
+### File Handling
+
+When files are provided:
+
+1. **New File Upload**: File is uploaded to the `files` table
+2. **File Reference Update**: Student record is updated with new file ID
+3. **Old File**: Previous file remains in database (not deleted, for audit trail)
+
+## Error Responses
+
+<ResponseField name="400" type="Bad Request">
+  Invalid JSON format, duplicate CURP, or duplicate email
+</ResponseField>
+
+<ResponseField name="404" type="Not Found">
+  Student with specified enrollment number not found
+</ResponseField>
+
+<ResponseField name="500" type="Internal Server Error">
+  Database error during update
+</ResponseField>
+
+```json Student Not Found
+{
+  "detail": "Alumno no encontrado"
+}
+```
+
+```json Duplicate CURP
+{
+  "detail": "Esta CURP ya está registrada en otro alumno."
+}
+```
+
+```json Duplicate Email
+{
+  "detail": "Este correo personal ya está en uso por otro alumno."
+}
+```
+
+```json Invalid JSON
+{
+  "detail": "Error en formato JSON de los datos."
+}
+```
+
+```json Database Error
+{
+  "detail": "Error al guardar en base de datos: Connection timeout"
+}
+```
+
+## Update Behavior
+
+### Partial Updates
+
+The endpoint supports partial updates - only fields present in `student_data` will be updated. Fields not included will retain their current values.
+
+### Address Updates
+
+If an address exists:
+- Only address fields present in the `address` object are updated
+- Missing fields keep their current values
+
+If no address exists:
+- Address fields in the request are ignored (no new address is created)
+
+### File Updates
+
+Files are only updated if explicitly provided:
+- **foto_perfil not provided**: Profile photo remains unchanged
+- **certificado not provided**: Certificate remains unchanged
+- **File provided**: New file is uploaded and student record is updated with new file ID
+
+## Transaction Safety
+
+The entire update operation is wrapped in a database transaction:
+- If any error occurs, all changes are rolled back
+- Ensures data consistency
+- No partial updates that could leave data in an inconsistent state
+
+## Use Cases
+
+1. **Edit Student Information**: Update student's personal details after initial registration
+2. **Correct Data Entry Errors**: Fix mistakes in student information
+3. **Update Contact Information**: Change email addresses or address details
+4. **Replace Documents**: Upload new profile photo or certificate
+5. **Change Academic Program**: Update career or origin school references

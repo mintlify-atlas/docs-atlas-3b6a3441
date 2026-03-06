@@ -1,0 +1,241 @@
+---
+title: 'Import Students'
+api: 'POST /alumnos/importar'
+description: 'Bulk import students from an Excel (.xlsx) file with comprehensive validation'
+---
+
+This endpoint allows bulk import of student records from an Excel file. It performs extensive validation on each row, creates student records, addresses, and user accounts, and generates credentials for students with institutional emails.
+
+## Request Body (multipart/form-data)
+
+<ParamField body="file" type="file" required>
+  Excel file (.xlsx) containing student data with the following columns:
+  
+  - **Matrícula**: 8-digit enrollment number
+  - **Nombre**: First name (letters only)
+  - **Apellido Paterno**: Paternal surname (letters only)
+  - **Apellido Materno**: Maternal surname (letters only)
+  - **Curp**: 18-character CURP
+  - **Correo Personal**: Personal email address
+  - **Correo Institucional**: Institutional email (@red.unid.mx)
+  - **Cuatrimestre**: Semester number (1-10)
+  - **Promedio General**: Average grade (0-10, integer)
+  - **Carrera**: Career external ID or name
+  - **Procedencia**: Origin school name
+  - **Estatus**: Student status (default: "activo")
+  - **Calle**: Street name
+  - **Número de domicilio**: House number
+  - **Colonia**: Neighborhood
+  - **Código Postal**: 5-digit ZIP code
+  - **Municipio**: Municipality (letters only)
+  - **Estado**: State (default: "Campeche")
+</ParamField>
+
+## Validation Rules
+
+### Enrollment Number (Matrícula)
+- Must be exactly 8 numeric digits
+- Cannot be duplicate within the file
+- Cannot already exist in the database
+
+### Names
+- **Nombre**: Required, letters only (including Spanish characters)
+- **Apellidos**: Letters only if provided
+- Full name combination must be unique in file and database
+
+### CURP
+- Required field
+- Must be exactly 18 characters
+- Must match CURP format: `^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$`
+- Cannot be duplicate within file or database
+
+### Emails
+- **Correo Personal**: Must match email format, unique in file and database
+- **Correo Institucional**: Must be @red.unid.mx domain, unique in file and database
+
+### Numeric Fields
+- **Cuatrimestre**: Integer from 1 to 10 (defaults to 1)
+- **Promedio General**: Integer from 0 to 10 (defaults to 0)
+- **Código Postal**: Exactly 5 digits
+
+### References
+- **Carrera**: Must match existing career by external_id or name
+- **Procedencia**: Must match existing origin school by name
+
+## Response (Success)
+
+<ResponseField name="message" type="string">
+  Success message indicating number of students created
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of generated credentials for students with institutional emails
+  <ResponseField name="nombre" type="string">
+    Student's full name
+  </ResponseField>
+  <ResponseField name="usuario" type="string">
+    Username (enrollment number)
+  </ResponseField>
+  <ResponseField name="password" type="string">
+    Generated temporary password (10 random characters)
+  </ResponseField>
+  <ResponseField name="correo" type="string">
+    Institutional email address
+  </ResponseField>
+</ResponseField>
+
+## Response (Validation Errors)
+
+When validation fails, the endpoint returns a 400 error with detailed information about each problematic row.
+
+<ResponseField name="detail" type="string">
+  Summary message listing row numbers with errors
+</ResponseField>
+
+<ResponseField name="errores_detalle" type="array">
+  Detailed validation errors for each row
+  <ResponseField name="fila" type="integer">
+    Excel row number (starting from 2)
+  </ResponseField>
+  <ResponseField name="matricula" type="string">
+    Enrollment number from the row
+  </ResponseField>
+  <ResponseField name="nombre" type="string">
+    Name from the row
+  </ResponseField>
+  <ResponseField name="campos" type="array">
+    List of field names with errors
+  </ResponseField>
+  <ResponseField name="mensajes" type="array">
+    Detailed error messages for each validation failure
+  </ResponseField>
+</ResponseField>
+
+## Example Request
+
+```bash cURL
+curl -X POST "https://api.example.com/alumnos/importar" \
+  -H "Content-Type: multipart/form-data" \
+  -F "file=@/path/to/students.xlsx"
+```
+
+```python Python
+import requests
+
+url = "https://api.example.com/alumnos/importar"
+files = {"file": open("students.xlsx", "rb")}
+
+response = requests.post(url, files=files)
+print(response.json())
+```
+
+## Example Response (Success)
+
+```json
+{
+  "message": "25 alumnos y usuarios creados correctamente.",
+  "data": [
+    {
+      "nombre": "Juan Pérez",
+      "usuario": "20240001",
+      "password": "aB3xK9mP2q",
+      "correo": "juan.perez@red.unid.mx"
+    },
+    {
+      "nombre": "María González",
+      "usuario": "20240002",
+      "password": "xY7wM4nR8p",
+      "correo": "maria.gonzalez@red.unid.mx"
+    }
+  ]
+}
+```
+
+## Example Response (Validation Errors)
+
+```json
+{
+  "detail": "Las filas 3, 5, 8 no pasaron el sistema de validación. Por favor descargue el reporte, revise y vuelva a intentar.",
+  "errores_detalle": [
+    {
+      "fila": 3,
+      "matricula": "2024001",
+      "nombre": "Juan",
+      "campos": ["Matrícula"],
+      "mensajes": ["La matrícula debe tener exactamente 8 dígitos numéricos"]
+    },
+    {
+      "fila": 5,
+      "matricula": "20240003",
+      "nombre": "Pedro123",
+      "campos": ["Nombre"],
+      "mensajes": ["El nombre no debe contener números ni símbolos"]
+    },
+    {
+      "fila": 8,
+      "matricula": "20240005",
+      "nombre": "Ana",
+      "campos": ["Curp"],
+      "mensajes": ["Formato de CURP inválido (Deben ser 18 caracteres reales)"]
+    }
+  ]
+}
+```
+
+## Automatic Actions
+
+1. **Student Record Creation**: For each valid row, creates a Student record with all provided information
+
+2. **Address Creation**: Creates a StudentAddress record linked to the student's enrollment number
+
+3. **User Account Creation**: If institutional email is provided:
+   - Creates User record with enrollment number as username
+   - Generates 10-character random password
+   - Sets role to "alumno" (student)
+   - Marks password as temporary (`is_temp_password = true`)
+   - Adds credentials to response data
+
+4. **Transaction Safety**: 
+   - If ANY row fails validation, entire import is rolled back
+   - No partial imports - all or nothing
+
+## Error Responses
+
+<ResponseField name="400" type="Bad Request">
+  Invalid file format or validation errors in data
+</ResponseField>
+
+```json Invalid File Format
+{
+  "detail": "Error: Solo se permiten archivos .xlsx"
+}
+```
+
+```json Validation Errors
+{
+  "detail": "Las filas 2, 5 no pasaron el sistema de validación. Por favor descargue el reporte, revise y vuelva a intentar.",
+  "errores_detalle": [...]
+}
+```
+
+## Common Validation Errors
+
+| Error Message | Cause |
+|--------------|-------|
+| "La matrícula debe tener exactamente 8 dígitos numéricos" | Enrollment number is not 8 digits |
+| "Matrícula duplicada en este mismo archivo Excel" | Same enrollment appears twice in file |
+| "La matrícula ya existe en la base de datos" | Enrollment already registered |
+| "El nombre no debe contener números ni símbolos" | Name contains invalid characters |
+| "El CURP es obligatorio" | CURP field is empty |
+| "Formato de CURP inválido" | CURP doesn't match expected pattern |
+| "CURP duplicado en este mismo archivo Excel" | Same CURP appears twice in file |
+| "El CURP ya está registrado" | CURP already exists in database |
+| "El Código Postal debe tener exactamente 5 números" | ZIP code is not 5 digits |
+| "Formato de correo personal inválido" | Email doesn't match valid format |
+| "El correo institucional debe pertenecer al dominio @red.unid.mx" | Institutional email is not @red.unid.mx |
+| "Este correo personal ya está en uso" | Email already registered |
+| "El cuatrimestre debe ser un número del 1 al 10" | Semester out of valid range |
+| "El promedio debe ser un número entero del 0 al 10" | Average is not 0-10 or has decimals |
+| "Carrera no encontrada" | Career reference doesn't exist |
+| "Procedencia no registrada" | Origin school doesn't exist |
+| "Ya existe un alumno registrado exactamente con este mismo nombre y apellidos" | Exact name match found in database |

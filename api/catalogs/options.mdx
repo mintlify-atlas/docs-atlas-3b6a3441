@@ -1,0 +1,98 @@
+---
+title: 'Get Form Options'
+api: 'GET /alumnos/options'
+description: 'Retrieve form options including careers and origin schools'
+---
+
+## Description
+
+This endpoint returns all available options needed to populate student registration and enrollment forms. It includes the list of available academic careers (programs) and origin schools (institutions from which students transfer or graduate).
+
+## Response
+
+Returns an object containing two arrays: careers and schools.
+
+### Response Structure
+
+<ResponseField name="careers" type="array" required>
+  Array of available academic careers/programs
+  
+  <Expandable title="Career Object">
+    <ResponseField name="id" type="integer" required>
+      Unique identifier for the career
+    </ResponseField>
+    
+    <ResponseField name="name" type="string" required>
+      Full name of the academic career/program (max 150 characters)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="schools" type="array" required>
+  Array of origin schools (only active schools are returned)
+  
+  <Expandable title="School Object">
+    <ResponseField name="id" type="integer" required>
+      Unique identifier for the origin school
+    </ResponseField>
+    
+    <ResponseField name="name" type="string" required>
+      Name of the origin school/institution (max 150 characters)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Example Request
+
+```bash
+curl -X GET "http://localhost:8000/alumnos/options" \
+  -H "accept: application/json"
+```
+
+## Example Response
+
+```json
+{
+  "careers": [
+    {
+      "id": 1,
+      "name": "Ingeniería en Sistemas Computacionales"
+    },
+    {
+      "id": 2,
+      "name": "Licenciatura en Administración de Empresas"
+    },
+    {
+      "id": 3,
+      "name": "Licenciatura en Derecho"
+    }
+  ],
+  "schools": [
+    {
+      "id": 1,
+      "name": "Preparatoria Federal Lázaro Cárdenas"
+    },
+    {
+      "id": 2,
+      "name": "CBTIS No. 1"
+    },
+    {
+      "id": 3,
+      "name": "Colegio de Bachilleres del Estado"
+    }
+  ]
+}
+```
+
+## Notes
+
+- Only **active** origin schools (where `is_active = true`) are returned in the response
+- The careers list includes all registered academic programs in the system
+- These options are typically used to populate dropdown menus in student registration forms
+
+## Use Cases
+
+- Initializing student registration forms with available career options
+- Populating origin school dropdowns during student enrollment
+- Validating career and school selections before form submission
+- Building dynamic form interfaces that adapt to available programs

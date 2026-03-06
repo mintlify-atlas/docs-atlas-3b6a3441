@@ -1,0 +1,792 @@
+---
+title: "Backend Architecture"
+description: "FastAPI backend structure, routers, models, schemas, and core services"
+---
+
+## Overview
+
+The SESA backend is built with **FastAPI**, a modern Python web framework. It provides a RESTful API with automatic documentation, authentication, and database integration using SQLAlchemy ORM.
+
+## Technology Stack
+
+- **Python 3.14+** - Modern Python with latest features
+- **FastAPI** - High-performance async web framework
+- **SQLAlchemy 2.0+** - SQL toolkit and ORM
+- **PyMySQL** - MySQL database connector
+- **Pydantic** - Data validation using Python type hints
+- **Bcrypt** - Password hashing
+- **Uvicorn** - ASGI server for production
+- **APScheduler** - Background task scheduling
+
+## Project Structure
+
+```
+backend/app/
+├── core/                    # Core functionality
+│   ├── config.py           # Configuration and environment variables
+│   └── security.py         # Password hashing and verification
+├── db/                     # Database configuration
+│   └── database.py         # SQLAlchemy engine and session
+├── models/                 # SQLAlchemy ORM models
+│   ├── __init__.py
+│   ├── academic_group.py
+│   ├── administrator.py
+│   ├── career.py
+│   ├── file.py
+│   ├── origin_school.py
+│   ├── role.py
+│   ├── student.py
+│   ├── student_addresses.py
+│   ├── student_status.py
+│   ├── student_status_log.py
+│   ├── subject.py
+│   ├── teacher.py
+│   └── user.py
+├── routers/                # API endpoints
+│   ├── __init__.py
+│   ├── auth.py            # Authentication endpoints
+│   ├── students.py        # Student management
+│   ├── catalogos.py       # Catalog endpoints
+│   ├── sync.py            # Data synchronization
+│   ├── Listados.py        # Report generation
+│   └── mock_api.py        # Mock external API
+├── schemas/               # Pydantic models for validation
+│   ├── __init__.py
+│   ├── auth.py           # Authentication schemas
+│   └── student.py        # Student schemas
+├── services/             # Business logic layer
+└── main.py               # Application entry point
+```
+
+## Application Entry Point
+
+### main.py
+
+The FastAPI application with CORS, routers, and lifecycle management:
+
+```python app/main.py
+import os
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+from sqlalchemy import text
+from apscheduler.schedulers.background import BackgroundScheduler
+
+from app.db.database import engine
+from app.routers.students import router as students_router
+from app.routers import Listados
+from app.routers import auth
+from app.routers import mock_api
+from app.routers import sync
+from app.routers import catalogos
+from app.routers.sync import tarea_automatica_sincronizacion
+
+load_dotenv()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Initialize background scheduler
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(tarea_automatica_sincronizacion, 'interval', minutes=1)
+    scheduler.start()
+    print("Cronjob de Sincronización Iniciado (Corriendo cada 1 minuto)")
+
+    # Test database connection
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        print("\n¡CONEXIÓN A BASE DE DATOS EXITOSA!\n")
+    except Exception as e:
+        print(f"\nERROR AL CONECTAR A LA BD: {e}\n")
+
+    yield
+
+    # Shutdown: Stop scheduler
+    scheduler.shutdown()
+    print("Cronjob de Sincronización Detenido")
+
+app = FastAPI(
+    title="SESA API",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# CORS Configuration
+origins_env = os.getenv("BACKEND_CORS_ORIGINS", "")
+origins = [o.strip() for o in origins_env.split(",") if o.strip()]
+
+if not origins:
+    origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ]
+
+print("CORS ORIGINS ACTIVOS:", origins)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include routers
+app.include_router(students_router)
+app.include_router(Listados.router)
+app.include_router(auth.router)
+app.include_router(mock_api.router)
+app.include_router(sync.router)
+app.include_router(catalogos.router)
+
+@app.get("/")
+def read_root():
+    return {"message": "El sistema SESA está funcionando"}
+```
+
+**Key Features:**
+- **Lifespan Management**: Handles startup/shutdown events
+- **Background Scheduler**: Runs periodic synchronization tasks
+- **CORS Middleware**: Enables cross-origin requests from frontend
+- **Router Organization**: Modular endpoint groups
+- **Database Health Check**: Verifies connection on startup
+
+## Core Module
+
+### Configuration
+
+Environment variables and database URL construction:
+
+```python app/core/config.py
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+DB_USER = os.getenv("MYSQL_USER")
+DB_PASSWORD = os.getenv("MYSQL_PASSWORD")
+DB_SERVER = os.getenv("MYSQL_SERVER")
+DB_PORT = os.getenv("MYSQL_PORT")
+DB_NAME = os.getenv("MYSQL_DB")
+
+DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_SERVER}:{DB_PORT}/{DB_NAME}"
+```
+
+**Environment Variables:**
+- `MYSQL_USER` - Database username
+- `MYSQL_PASSWORD` - Database password
+- `MYSQL_SERVER` - Database host
+- `MYSQL_PORT` - Database port (default: 3306)
+- `MYSQL_DB` - Database name
+
+### Security
+
+Password hashing and verification using bcrypt:
+
+```python app/core/security.py
+import bcrypt
+
+def get_password_hash(password: str) -> str:
+    """Hash a password using bcrypt"""
+    pwd_bytes = password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(pwd_bytes, salt)
+    return hashed.decode('utf-8')
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a password against its hash"""
+    try:
+        pwd_bytes = plain_password.encode('utf-8')
+        hash_bytes = hashed_password.encode('utf-8')
+        return bcrypt.checkpw(pwd_bytes, hash_bytes)
+    except Exception:
+        return False
+```
+
+**Usage:**
+- `get_password_hash()` - Hash passwords before storing
+- `verify_password()` - Authenticate users during login
+
+## Database Layer
+
+### Database Connection
+
+SQLAlchemy engine and session management:
+
+```python app/db/database.py
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
+from app.core.config import DATABASE_URL
+
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True  # Verify connections before using
+)
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+Base = declarative_base()
+
+def get_db():
+    """Dependency for database sessions"""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+```
+
+**Key Features:**
+- `pool_pre_ping`: Ensures connections are alive before use
+- `get_db()`: Dependency injection for route handlers
+- `Base`: Parent class for all ORM models
+
+### Using Database Sessions
+
+```python
+from fastapi import Depends
+from sqlalchemy.orm import Session
+from app.db.database import get_db
+
+@router.get("/students")
+def get_students(db: Session = Depends(get_db)):
+    students = db.query(Student).all()
+    return students
+```
+
+## Models Layer
+
+SQLAlchemy ORM models define the database schema. See [Database Schema](/development/database-schema) for complete model definitions.
+
+**Model Organization:**
+- Each model in its own file
+- All models imported in `models/__init__.py`
+- Use SQLAlchemy relationships for joins
+- Follow Python naming conventions
+
+Example model import:
+```python app/models/__init__.py
+from app.models.student import Student
+from app.models.user import User
+from app.models.career import Career
+from app.models.role import Role
+# ... more models
+```
+
+## Schemas Layer
+
+Pydantic models for request/response validation:
+
+### Authentication Schemas
+
+```python app/schemas/auth.py
+from pydantic import BaseModel, EmailStr
+from typing import Optional
+from datetime import datetime
+
+class LoginRequest(BaseModel):
+    identifier: str
+    password: str
+
+class PasswordChangeRequest(BaseModel):
+    identifier: str
+    current_password: str
+    new_password: str
+    confirm_password: str
+
+class RoleResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class UserResponse(BaseModel):
+    id: int
+    identifier: str
+    email: EmailStr
+    role: RoleResponse
+    is_temp_password: bool
+    created_at: datetime
+    last_login: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+```
+
+**Schema Purposes:**
+- **Request Models**: Validate incoming data
+- **Response Models**: Serialize database models to JSON
+- **Config.from_attributes**: Enable ORM mode for SQLAlchemy models
+
+### Student Schemas
+
+```python app/schemas/student.py
+from pydantic import BaseModel, EmailStr
+from typing import Optional
+
+class StudentCreate(BaseModel):
+    matricula: str
+    nombre: str
+    apellido_paterno: str
+    apellido_materno: str
+    curp: str
+    email_personal: EmailStr
+    career_id: int
+    promedio_procedencia: int
+
+class StudentResponse(BaseModel):
+    matricula: str
+    nombre: str
+    apellido_paterno: str
+    apellido_materno: str
+    email_personal: str
+    career: dict
+    status: dict
+
+    class Config:
+        from_attributes = True
+```
+
+## Routers Layer
+
+FastAPI routers organize endpoints by domain:
+
+### Authentication Router
+
+```python app/routers/auth.py
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from sqlalchemy import or_
+from datetime import datetime
+
+from app.db.database import get_db
+from app.models.user import User
+from app.schemas.auth import LoginRequest, UserResponse, PasswordChangeRequest
+from app.core.security import verify_password, get_password_hash
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+@router.post("/login", response_model=UserResponse)
+def login(data: LoginRequest, db: Session = Depends(get_db)):
+    """Authenticate user with identifier and password"""
+    generic_error = "ID o contraseña incorrectos"
+
+    # Support login by identifier or email
+    user = (
+        db.query(User)
+        .filter(or_(User.identifier == data.identifier, User.email == data.identifier))
+        .first()
+    )
+
+    if not user:
+        raise HTTPException(status_code=401, detail=generic_error)
+
+    if not verify_password(data.password, user.password_hash):
+        raise HTTPException(status_code=401, detail=generic_error)
+
+    # Update last login
+    user.last_login = datetime.utcnow()
+    db.commit()
+    db.refresh(user)
+
+    return user
+
+@router.put("/change-password")
+def change_password(data: PasswordChangeRequest, db: Session = Depends(get_db)):
+    """Change user password with validation"""
+    user = db.query(User).filter(User.identifier == data.identifier).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    # Verify current password
+    if not verify_password(data.current_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="La contraseña actual es incorrecta")
+
+    # Confirm new password
+    if data.new_password != data.confirm_password:
+        raise HTTPException(status_code=400, detail="Las contraseñas no coinciden")
+
+    # Prevent reusing same password
+    if verify_password(data.new_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="La nueva contraseña no puede ser igual a la actual")
+
+    # Update password
+    user.password_hash = get_password_hash(data.new_password)
+    user.is_temp_password = False
+
+    db.commit()
+    db.refresh(user)
+
+    return {"message": "Contraseña actualizada exitosamente"}
+```
+
+**Router Features:**
+- `prefix="/auth"` - All routes prefixed with `/auth`
+- `tags=["auth"]` - Groups in OpenAPI docs
+- `response_model` - Automatic validation and serialization
+- `Depends(get_db)` - Dependency injection for database sessions
+
+### Students Router
+
+The students router handles student management operations. Here's a partial example:
+
+```python app/routers/students.py (partial)
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from sqlalchemy.orm import Session
+from typing import List
+import pandas as pd
+
+from app.db.database import get_db
+from app.models.student import Student
+from app.schemas.student import StudentResponse, StudentCreate
+
+router = APIRouter(prefix="/api/students", tags=["students"])
+
+@router.get("/", response_model=List[StudentResponse])
+def list_students(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+):
+    """Get list of students with pagination"""
+    students = db.query(Student).offset(skip).limit(limit).all()
+    return students
+
+@router.get("/{matricula}", response_model=StudentResponse)
+def get_student(matricula: str, db: Session = Depends(get_db)):
+    """Get student by matricula"""
+    student = db.query(Student).filter(Student.matricula == matricula).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Estudiante no encontrado")
+    return student
+
+@router.post("/", response_model=StudentResponse)
+def create_student(student: StudentCreate, db: Session = Depends(get_db)):
+    """Create new student"""
+    # Check if matricula already exists
+    existing = db.query(Student).filter(Student.matricula == student.matricula).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Matrícula ya existe")
+    
+    # Create new student
+    db_student = Student(**student.dict())
+    db.add(db_student)
+    db.commit()
+    db.refresh(db_student)
+    return db_student
+
+@router.post("/import")
+async def import_students(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Bulk import students from Excel file"""
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        raise HTTPException(status_code=400, detail="Archivo debe ser Excel")
+    
+    # Read Excel file
+    df = pd.read_excel(file.file)
+    
+    # Process each row
+    imported = 0
+    for _, row in df.iterrows():
+        student = Student(
+            matricula=row['matricula'],
+            nombre=row['nombre'],
+            apellido_paterno=row['apellido_paterno'],
+            # ... more fields
+        )
+        db.add(student)
+        imported += 1
+    
+    db.commit()
+    return {"message": f"{imported} estudiantes importados"}
+```
+
+**Common Patterns:**
+- Query parameters for filtering/pagination
+- Path parameters for resource IDs
+- Request body validation with Pydantic
+- File uploads with `UploadFile`
+- Bulk operations with pandas
+
+### Other Routers
+
+**catalogos.py** - Catalog data (careers, statuses, etc.)
+```python
+@router.get("/careers")
+def get_careers(db: Session = Depends(get_db)):
+    return db.query(Career).all()
+```
+
+**sync.py** - External system synchronization
+```python
+@router.post("/sync/students")
+def sync_students(db: Session = Depends(get_db)):
+    # Fetch from external API
+    # Update local database
+    pass
+```
+
+**Listados.py** - Report generation
+```python
+@router.get("/reports/students-by-career")
+def students_by_career(career_id: int, db: Session = Depends(get_db)):
+    # Generate report
+    pass
+```
+
+**mock_api.py** - Mock external API for testing
+```python
+@router.get("/mock/students")
+def mock_students():
+    return [{"id": 1, "name": "Test Student"}]
+```
+
+## Background Tasks
+
+### Automatic Synchronization
+
+APScheduler runs periodic tasks:
+
+```python app/routers/sync.py (partial)
+from apscheduler.schedulers.background import BackgroundScheduler
+
+def tarea_automatica_sincronizacion():
+    """Sync data from external systems"""
+    print("Ejecutando sincronización automática...")
+    # Fetch from external API
+    # Update database
+    # Log results
+```
+
+**Configuration in main.py:**
+```python
+scheduler = BackgroundScheduler()
+scheduler.add_job(tarea_automatica_sincronizacion, 'interval', minutes=1)
+scheduler.start()
+```
+
+## API Documentation
+
+FastAPI automatically generates interactive documentation:
+
+### Swagger UI
+Visit http://localhost:8000/docs
+
+**Features:**
+- Browse all endpoints
+- Try requests directly in browser
+- View request/response schemas
+- See authentication requirements
+
+### ReDoc
+Visit http://localhost:8000/redoc
+
+**Features:**
+- Clean, readable documentation
+- Organized by tags
+- Schema definitions
+- Code samples
+
+## Error Handling
+
+### HTTPException
+
+```python
+from fastapi import HTTPException
+
+# 404 Not Found
+raise HTTPException(status_code=404, detail="Estudiante no encontrado")
+
+# 400 Bad Request
+raise HTTPException(status_code=400, detail="Datos inválidos")
+
+# 401 Unauthorized
+raise HTTPException(status_code=401, detail="Credenciales inválidas")
+
+# 500 Internal Server Error
+raise HTTPException(status_code=500, detail="Error del servidor")
+```
+
+### Custom Exception Handlers
+
+```python
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+@app.exception_handler(ValueError)
+async def value_error_handler(request: Request, exc: ValueError):
+    return JSONResponse(
+        status_code=400,
+        content={"message": str(exc)}
+    )
+```
+
+## Database Transactions
+
+### Simple Transaction
+
+```python
+@router.post("/students")
+def create_student(student: StudentCreate, db: Session = Depends(get_db)):
+    db_student = Student(**student.dict())
+    db.add(db_student)
+    db.commit()
+    db.refresh(db_student)
+    return db_student
+```
+
+### Complex Transaction with Rollback
+
+```python
+@router.post("/students/with-address")
+def create_student_with_address(data: dict, db: Session = Depends(get_db)):
+    try:
+        # Create student
+        student = Student(**data['student'])
+        db.add(student)
+        db.flush()  # Get student.matricula
+        
+        # Create address
+        address = StudentAddress(
+            student_matricula=student.matricula,
+            **data['address']
+        )
+        db.add(address)
+        
+        db.commit()
+        return {"message": "Success"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+```
+
+## Best Practices
+
+### 1. Use Dependency Injection
+
+```python
+# ✅ Good: Use Depends()
+def get_students(db: Session = Depends(get_db)):
+    pass
+
+# ❌ Bad: Create session manually
+def get_students():
+    db = SessionLocal()
+    # ...
+    db.close()
+```
+
+### 2. Validate Input with Pydantic
+
+```python
+# ✅ Good: Use schemas
+class StudentCreate(BaseModel):
+    nombre: str
+    email: EmailStr
+
+@router.post("/students")
+def create_student(student: StudentCreate):
+    pass
+
+# ❌ Bad: Use raw dict
+@router.post("/students")
+def create_student(student: dict):
+    pass
+```
+
+### 3. Use Response Models
+
+```python
+# ✅ Good: Define response model
+@router.get("/students", response_model=List[StudentResponse])
+def get_students(db: Session = Depends(get_db)):
+    return db.query(Student).all()
+
+# ❌ Bad: Return raw SQLAlchemy objects
+@router.get("/students")
+def get_students(db: Session = Depends(get_db)):
+    return db.query(Student).all()
+```
+
+### 4. Handle Errors Gracefully
+
+```python
+# ✅ Good: Specific error messages
+@router.get("/students/{matricula}")
+def get_student(matricula: str, db: Session = Depends(get_db)):
+    student = db.query(Student).filter(Student.matricula == matricula).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Estudiante no encontrado")
+    return student
+
+# ❌ Bad: Generic errors
+@router.get("/students/{matricula}")
+def get_student(matricula: str, db: Session = Depends(get_db)):
+    return db.query(Student).filter(Student.matricula == matricula).first()
+```
+
+## Development Commands
+
+### Run Development Server
+
+```bash
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+**Options:**
+- `--reload` - Auto-reload on code changes
+- `--host 0.0.0.0` - Accept connections from any IP
+- `--port 8000` - Listen on port 8000
+
+### Run with Different Port
+
+```bash
+uv run uvicorn app.main:app --reload --port 8001
+```
+
+### Run in Production
+
+```bash
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+```
+
+**Production Options:**
+- Remove `--reload` (slower in production)
+- Add `--workers N` for multiple processes
+- Use process manager like systemd or supervisor
+
+## Testing
+
+### Manual Testing with Swagger UI
+
+1. Start server: `uv run uvicorn app.main:app --reload`
+2. Open http://localhost:8000/docs
+3. Try endpoints directly in browser
+
+### Testing with curl
+
+```bash
+# Login
+curl -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"identifier": "12345678", "password": "test123"}'
+
+# Get students
+curl http://localhost:8000/api/students
+
+# Create student
+curl -X POST http://localhost:8000/api/students \
+  -H "Content-Type: application/json" \
+  -d '{"matricula": "87654321", "nombre": "Juan", ...}'
+```
+
+## Next Steps
+
+- [Database Schema](/development/database-schema) - Explore the data models
+- [Frontend Structure](/development/frontend-structure) - Learn about the React app
+- [Setup Guide](/development/setup) - Configure your environment
+- [API Reference](/api/auth/login) - Detailed endpoint documentation

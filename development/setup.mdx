@@ -1,0 +1,280 @@
+---
+title: "Development Environment Setup"
+description: "Complete guide to setting up your local development environment for SESA"
+---
+
+## Overview
+
+This guide walks you through setting up the complete SESA development environment, including backend (FastAPI + Python), frontend (React + Vite), and database (MySQL with Docker).
+
+## Prerequisites
+
+Before you begin, ensure you have the following installed:
+
+- **Python 3.14+** - Required for the backend
+- **uv** - Fast Python package manager
+- **Node.js 18+** - Required for the frontend
+- **npm or yarn** - JavaScript package manager
+- **Docker** - For running MySQL database
+- **Tailscale** - VPN for secure database access (optional for local development)
+- **Git** - For version control
+
+## Clone the Repository
+
+```bash
+git clone <repository-url>
+cd SESA
+```
+
+The project structure:
+```
+SESA/
+├── backend/          # FastAPI application
+├── frontend/         # React + Vite application
+└── README.md
+```
+
+## Backend Setup
+
+### 1. Navigate to Backend Directory
+
+```bash
+cd backend
+```
+
+### 2. Install Python Dependencies with uv
+
+The backend uses **uv** as the package manager. Install dependencies:
+
+```bash
+uv sync
+```
+
+This will create a virtual environment and install all dependencies listed in `pyproject.toml`:
+
+<CodeGroup>
+```toml pyproject.toml
+[project]
+name = "backend"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "bcrypt==3.2.2",
+    "cryptography>=46.0.5",
+    "fastapi[standard-no-fastapi-cloud-cli]>=0.128.4",
+    "openpyxl>=3.1.5",
+    "pandas>=3.0.1",
+    "passlib[bcrypt]>=1.7.4",
+    "pymysql>=1.1.2",
+    "python-dotenv>=1.2.1",
+    "python-multipart>=0.0.22",
+    "requests>=2.32.5",
+    "sqlalchemy>=2.0.46",
+    "uvicorn>=0.40.0",
+]
+```
+</CodeGroup>
+
+### 3. Configure Environment Variables
+
+Create a `.env` file in the `backend/` directory:
+
+```bash .env
+# MySQL Database Configuration
+MYSQL_USER=your_username
+MYSQL_PASSWORD=your_password
+MYSQL_SERVER=localhost
+MYSQL_PORT=3306
+MYSQL_DB=sesa_db
+
+# CORS Origins (comma-separated)
+BACKEND_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+```
+
+<Note>
+If connecting to a remote database via Tailscale VPN, use the Tailscale IP address for `MYSQL_SERVER`.
+</Note>
+
+### 4. Run Database Migrations
+
+The database schema is defined using SQLAlchemy models. For initial setup, ensure your MySQL database is running and create the tables.
+
+### 5. Start the Development Server
+
+```bash
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+The API will be available at:
+- **API**: http://localhost:8000
+- **Interactive Docs**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+
+<Check>
+Verify the backend is running by visiting http://localhost:8000 - you should see:
+```json
+{"message": "El sistema SESA está funcionando"}
+```
+</Check>
+
+## Frontend Setup
+
+### 1. Navigate to Frontend Directory
+
+```bash
+cd frontend
+```
+
+### 2. Install Node Dependencies
+
+Using npm:
+```bash
+npm install
+```
+
+Or using yarn:
+```bash
+yarn install
+```
+
+### 3. Configure Environment Variables
+
+Create a `.env` file in the `frontend/` directory:
+
+```bash .env
+# Backend API URL
+VITE_API_URL=http://localhost:8000
+```
+
+The frontend uses Vite's environment variable syntax (`VITE_` prefix).
+
+### 4. Start the Development Server
+
+```bash
+npm run dev
+```
+
+Or with yarn:
+```bash
+yarn dev
+```
+
+The frontend will be available at:
+- **Development Server**: http://localhost:5173
+
+<Info>
+Vite provides instant hot module replacement (HMR) - changes to your code will be reflected immediately without a full page reload.
+</Info>
+
+## Database Setup with Docker
+
+### Option 1: Local MySQL with Docker
+
+Create a `docker-compose.yml` file:
+
+```yaml docker-compose.yml
+version: '3.8'
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: sesa_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: sesa_db
+      MYSQL_USER: sesa_user
+      MYSQL_PASSWORD: sesa_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+volumes:
+  mysql_data:
+```
+
+Start the database:
+```bash
+docker-compose up -d
+```
+
+### Option 2: Remote Database with Tailscale
+
+For production-like development, connect to the centralized database:
+
+1. Install Tailscale: https://tailscale.com/download
+2. Connect to your tailnet
+3. Update `MYSQL_SERVER` in your `.env` to the Tailscale IP of the database server
+
+## Development Workflow
+
+### Hot Reload
+
+Both frontend and backend support hot reload:
+
+**Backend (FastAPI + Uvicorn):**
+- Changes to Python files automatically reload the server
+- Uses `--reload` flag in development
+
+**Frontend (Vite):**
+- Instant hot module replacement (HMR)
+- Changes reflect immediately in the browser
+- No manual refresh needed
+
+### Running Both Servers
+
+Open two terminal windows:
+
+**Terminal 1 - Backend:**
+```bash
+cd backend
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+**Terminal 2 - Frontend:**
+```bash
+cd frontend
+npm run dev
+```
+
+### Testing the Integration
+
+1. Open http://localhost:5173 in your browser
+2. You should see the login page
+3. Login with a test user to verify backend-frontend communication
+
+## Common Issues
+
+### Port Already in Use
+
+If port 8000 or 5173 is already in use:
+
+**Backend:**
+```bash
+uv run uvicorn app.main:app --reload --port 8001
+```
+
+**Frontend:**
+Update `vite.config.js`:
+```js
+export default defineConfig({
+  server: {
+    port: 5174
+  }
+})
+```
+
+### Database Connection Failed
+
+1. Verify MySQL is running: `docker ps`
+2. Check credentials in `.env` file
+3. Test connection: `mysql -h localhost -u sesa_user -p`
+
+### CORS Errors
+
+Ensure your frontend URL is listed in `BACKEND_CORS_ORIGINS` in the backend `.env` file.
+
+## Next Steps
+
+- [Database Schema](/development/database-schema) - Learn about the database structure
+- [Frontend Architecture](/development/frontend-structure) - Explore the React application
+- [Backend Architecture](/development/backend-structure) - Understand the FastAPI application

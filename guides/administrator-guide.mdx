@@ -1,0 +1,522 @@
+---
+title: 'Administrator Guide'
+description: 'Complete workflow for managing students in SESA'
+icon: 'user-shield'
+---
+
+# Administrator Guide
+
+This guide covers the complete workflow for administrators to manage student records in the SESA system, from initial setup to day-to-day operations.
+
+## Setting the Base Student ID
+
+Before registering students, you need to configure the base matriculation number that the system will use as a starting point.
+
+<Steps>
+  <Step title="Access the Set Base ID Endpoint">
+    Navigate to `/alumnos/set-base-id` in your administration panel.
+  </Step>
+  
+  <Step title="Enter the Base Matriculation Number">
+    Provide an 8-digit numeric matriculation number (e.g., `20240001`).
+    
+    <Warning>
+      The base ID must:
+      - Be exactly 8 digits
+      - Be numeric only
+      - Not already exist in the system
+    </Warning>
+  </Step>
+  
+  <Step title="System Creates Placeholder Record">
+    The system automatically creates a dummy student record with:
+    - Name: "REGISTRO BASE SISTEMA"
+    - Status: Baja (inactive)
+    - CURP: `BASE{matricula}`
+    
+    This ensures the next student registration will use the correct sequential number.
+  </Step>
+</Steps>
+
+### API Request Example
+
+```bash
+POST /alumnos/set-base-id
+Content-Type: application/x-www-form-urlencoded
+
+nueva_matricula=20240001
+```
+
+### Response
+
+```json
+{
+  "message": "Matrícula base actualizada correctamente a: 20240001"
+}
+```
+
+<Note>
+  The base ID setup only needs to be performed once when initializing the system or when starting a new academic period.
+</Note>
+
+---
+
+## Registering Students Manually
+
+Use manual registration for individual student enrollment with complete documentation upload.
+
+<Steps>
+  <Step title="Prepare Required Documents">
+    Gather the following files:
+    - **Profile photo** (required): JPEG/PNG format
+    - **Certificate** (optional): PDF format
+  </Step>
+  
+  <Step title="Fill Student Information Form">
+    Complete all required fields:
+    
+    **Personal Information:**
+    - Full name (nombre, apellido paterno, apellido materno)
+    - CURP (18 characters)
+    - Personal email
+    - Institutional email (optional)
+    
+    **Academic Information:**
+    - Career ID
+    - Origin school ID
+    - GPA from previous institution (promedio_procedencia)
+    
+    **Address:**
+    - Street, number, neighborhood
+    - Postal code, municipality, state
+  </Step>
+  
+  <Step title="Submit Registration">
+    Send a POST request to `/alumnos/register` with multipart/form-data:
+    - `student_data`: JSON string with all fields
+    - `foto_perfil`: File upload
+    - `certificado`: File upload (optional)
+  </Step>
+  
+  <Step title="System Processing">
+    The system automatically:
+    1. Generates the next sequential matriculation number
+    2. Validates CURP and email uniqueness
+    3. Stores files in the database
+    4. Creates student record with "activo" status
+    5. Creates address record
+    6. Generates a random 10-character password
+    7. Creates user account with temporary password flag
+    8. Sends welcome email with credentials
+  </Step>
+</Steps>
+
+### API Request Example
+
+```bash
+POST /alumnos/register
+Content-Type: multipart/form-data
+
+student_data='{"nombre":"Juan","apellido_paterno":"Pérez","apellido_materno":"López","curp":"PELJ001225HCMRPN09","email_personal":"juan.perez@gmail.com","email_institucional":"juan.perez@red.unid.mx","career_id":1,"origin_school_id":1,"promedio_procedencia":8.5,"address":{"calle":"Av. Principal","numero_domicilio":"123","colonia":"Centro","codigo_postal":"24000","municipio":"Campeche","estado":"Campeche"}}'
+foto_perfil=@/path/to/photo.jpg
+certificado=@/path/to/certificate.pdf
+```
+
+### Response
+
+```json
+{
+  "status": "success",
+  "matricula": "20240002",
+  "temporal_password": "aB3xK9mP2q"
+}
+```
+
+<Tip>
+  Save the temporary password securely - it's only shown once during registration. The student will also receive it via email.
+</Tip>
+
+### Validation Rules
+
+- **CURP**: Must be unique and not already registered
+- **Personal Email**: Must be unique in the system
+- **Profile Photo**: Required for all registrations
+- **Certificate**: Optional but recommended
+
+---
+
+## Importing Students in Bulk
+
+For large-scale enrollments, use the bulk import feature with Excel files.
+
+<Steps>
+  <Step title="Download the Template">
+    Use the standardized Excel template with the following columns:
+    
+    - Matrícula (8 digits)
+    - Nombre
+    - Apellido Paterno
+    - Apellido Materno
+    - Curp (18 characters)
+    - Correo Personal
+    - Correo Institucional
+    - Carrera (external_id or name)
+    - Procedencia (school name)
+    - Cuatrimestre (1-10)
+    - Promedio General (0-10)
+    - Estatus (activo/baja)
+    - Calle
+    - Número de domicilio
+    - Colonia
+    - Código Postal (5 digits)
+    - Municipio
+    - Estado
+  </Step>
+  
+  <Step title="Fill the Excel File">
+    Enter student data ensuring:
+    - Each matriculation number is exactly 8 digits and unique
+    - CURPs are properly formatted and unique
+    - Emails are valid and unique
+    - Career and origin school match existing records
+  </Step>
+  
+  <Step title="Upload and Validate">
+    POST the file to `/alumnos/importar`
+    
+    ```bash
+    POST /alumnos/importar
+    Content-Type: multipart/form-data
+    
+    file=@students.xlsx
+    ```
+  </Step>
+  
+  <Step title="Review Validation Results">
+    The system performs comprehensive validation:
+    - Format checks (digits, letters, CURP structure)
+    - Uniqueness validation (within file and database)
+    - Reference validation (careers, schools exist)
+    - Data integrity checks
+  </Step>
+</Steps>
+
+### Validation Error Handling
+
+<Warning>
+  If ANY row fails validation, the ENTIRE import is rolled back. No partial imports are allowed.
+</Warning>
+
+Error responses include detailed information:
+
+```json
+{
+  "detail": "Las filas 3, 7, 15 no pasaron el sistema de validación. Por favor descargue el reporte, revise y vuelva a intentar.",
+  "errores_detalle": [
+    {
+      "fila": 3,
+      "matricula": "20240005",
+      "nombre": "María",
+      "campos": ["CURP"],
+      "mensajes": ["El CURP MARS001015MCMRSL08 ya está registrado"]
+    },
+    {
+      "fila": 7,
+      "matricula": "20240009",
+      "nombre": "Carlos",
+      "campos": ["Correo Personal"],
+      "mensajes": ["Correo personal duplicado en este mismo Excel"]
+    }
+  ]
+}
+```
+
+### Successful Import Response
+
+```json
+{
+  "message": "45 alumnos y usuarios creados correctamente.",
+  "data": [
+    {
+      "nombre": "Juan Pérez",
+      "usuario": "20240002",
+      "password": "xY9kL2mN4p",
+      "correo": "juan.perez@red.unid.mx"
+    }
+  ]
+}
+```
+
+<Tip>
+  Export the credentials list immediately after import - passwords are only shown once and are needed for student access.
+</Tip>
+
+---
+
+## Searching and Filtering Students
+
+Use the list endpoint to find and manage student records efficiently.
+
+### Endpoint: `/alumnos/listado`
+
+**Query Parameters:**
+- `skip`: Number of records to skip (pagination)
+- `limit`: Maximum records to return (default: 10)
+- `busqueda`: Search term (3-50 characters, alphanumeric)
+- `carrera_id`: Filter by career ID
+- `cuatrimestre`: Filter by current semester (1-10)
+
+### Example: Search by Name
+
+```bash
+GET /alumnos/listado?busqueda=Juan&limit=20
+```
+
+### Example: Filter by Career and Semester
+
+```bash
+GET /alumnos/listado?carrera_id=2&cuatrimestre=3&skip=0&limit=50
+```
+
+### Response Format
+
+```json
+{
+  "total": 128,
+  "data": [
+    {
+      "matricula": "20240002",
+      "nombre_completo": "Juan Pérez López",
+      "carrera": "Ingeniería en Sistemas",
+      "estatus": "activo"
+    }
+  ]
+}
+```
+
+<Note>
+  Search supports partial matching on both matriculation number and full name using case-insensitive comparison.
+</Note>
+
+---
+
+## Viewing and Editing Student Details
+
+Administrators can view complete student information and update records as needed.
+
+<Steps>
+  <Step title="Retrieve Student Details">
+    Get complete student information:
+    
+    ```bash
+    GET /alumnos/detalle/{matricula}
+    ```
+    
+    Returns student data, address, and file information.
+  </Step>
+  
+  <Step title="Modify Information">
+    Update editable fields:
+    - Personal information (name, CURP, emails)
+    - Academic information (career, origin school)
+    - Address details
+    - Documents (photo, certificate)
+  </Step>
+  
+  <Step title="Submit Changes">
+    ```bash
+    PUT /alumnos/actualizar/{matricula}
+    Content-Type: multipart/form-data
+    
+    student_data='{...}'
+    foto_perfil=@new_photo.jpg  # optional
+    certificado=@new_cert.pdf    # optional
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  **Protected Fields:**
+  - Matriculation number (cannot be changed)
+  - GPA from previous institution (promedio_procedencia)
+  - Student status (use dedicated status management)
+  
+  These fields protect academic history integrity.
+</Warning>
+
+### Validation on Updates
+
+- CURP uniqueness (excluding current student)
+- Email uniqueness (excluding current student)
+- Career and school must exist
+- File format validation for uploads
+
+---
+
+## Managing Student Status
+
+Student status reflects their current enrollment state in the system.
+
+### Available Status Values
+
+1. **Activo**: Currently enrolled and attending
+2. **Baja**: Inactive or withdrawn
+
+### Status Changes
+
+Status is updated through the student detail update endpoint by modifying the `status_id` field.
+
+```json
+{
+  "status_id": 2  // 1 = activo, 2 = baja
+}
+```
+
+<Note>
+  Status changes should be documented and may require administrative approval according to institutional policies.
+</Note>
+
+---
+
+## Real-World Scenarios
+
+### Scenario 1: New Academic Period Setup
+
+<Steps>
+  <Step title="Set Base ID">
+    Configure the starting matriculation for the new period (e.g., `20250001`).
+  </Step>
+  
+  <Step title="Prepare Bulk Import">
+    Gather all pre-registered student data in the Excel template.
+  </Step>
+  
+  <Step title="Import and Validate">
+    Upload the file and review validation errors.
+  </Step>
+  
+  <Step title="Fix and Retry">
+    Correct any validation issues and re-import.
+  </Step>
+  
+  <Step title="Distribute Credentials">
+    Export the credentials list and securely distribute to students.
+  </Step>
+</Steps>
+
+### Scenario 2: Late Enrollment
+
+<Steps>
+  <Step title="Use Manual Registration">
+    Register the late student individually with complete documentation.
+  </Step>
+  
+  <Step title="Verify Auto-Assignment">
+    Confirm the system assigned the next sequential matriculation number.
+  </Step>
+  
+  <Step title="Provide Credentials">
+    Give the student their matriculation number and temporary password.
+  </Step>
+</Steps>
+
+### Scenario 3: Student Information Update
+
+<Steps>
+  <Step title="Search Student">
+    Use the list endpoint to find the student by name or matriculation.
+  </Step>
+  
+  <Step title="Retrieve Current Data">
+    Get complete details to verify current information.
+  </Step>
+  
+  <Step title="Update Required Fields">
+    Modify only the fields that need changes (e.g., new address, updated email).
+  </Step>
+  
+  <Step title="Verify Changes">
+    Retrieve details again to confirm updates were saved.
+  </Step>
+</Steps>
+
+---
+
+## Best Practices
+
+### Data Quality
+
+<Check>
+  - Always validate CURPs against official government format
+  - Use institutional email domain (@red.unid.mx) consistently
+  - Verify student names match official documentation
+  - Keep address information complete and current
+</Check>
+
+### Security
+
+<Check>
+  - Never share temporary passwords via insecure channels
+  - Encourage students to change passwords immediately
+  - Maintain audit logs of all administrative changes
+  - Limit administrator access to authorized personnel only
+</Check>
+
+### Bulk Operations
+
+<Check>
+  - Test with small sample files before full imports
+  - Keep backup copies of original Excel files
+  - Review validation errors carefully before corrections
+  - Export credentials immediately after successful import
+</Check>
+
+### Documentation
+
+<Check>
+  - Keep records of matriculation number assignments
+  - Document status changes with reasons
+  - Maintain files (photos, certificates) in good quality
+  - Archive import results for institutional records
+</Check>
+
+---
+
+## Common Issues and Solutions
+
+### Issue: Import Fails Due to Duplicate CURP
+
+**Solution:** Check if the student is already registered. If so, use the update endpoint instead of importing again.
+
+### Issue: Email Not Delivered to Student
+
+**Solution:** Verify the email address is correct and check spam folders. You can manually provide the credentials from the API response.
+
+### Issue: Base ID Already Exists
+
+**Solution:** Choose a different base ID that doesn't conflict with existing records. Review current matriculation numbers first.
+
+### Issue: Student Cannot Log In
+
+**Solution:** Verify the user account was created (check if institutional email was provided). Use the password change flow if needed.
+
+---
+
+## Quick Reference
+
+### Endpoints Summary
+
+| Endpoint | Method | Purpose |
+|----------|--------|----------|
+| `/alumnos/set-base-id` | POST | Configure base matriculation |
+| `/alumnos/register` | POST | Register single student |
+| `/alumnos/importar` | POST | Bulk import from Excel |
+| `/alumnos/listado` | GET | Search and filter students |
+| `/alumnos/detalle/{matricula}` | GET | Get student details |
+| `/alumnos/actualizar/{matricula}` | PUT | Update student information |
+| `/alumnos/options` | GET | Get careers and schools |
+| `/alumnos/archivos/{file_id}` | GET | Download student files |
+
+<Tip>
+  Bookmark this guide for quick access during student registration periods!
+</Tip>

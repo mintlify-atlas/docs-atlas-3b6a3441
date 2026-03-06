@@ -1,0 +1,106 @@
+---
+title: 'Manual Synchronization'
+api: 'POST /sincronizacion/ejecutar'
+description: 'Manually trigger synchronization of academic data from external systems'
+---
+
+## Description
+
+This endpoint manually triggers the synchronization process that imports academic data from external systems into SESA. The synchronization updates teachers, subjects, and academic groups based on data retrieved from the external academic workload API.
+
+<Warning>
+  This endpoint performs database write operations and should be used carefully. It's typically restricted to administrative users.
+</Warning>
+
+## What Gets Synchronized
+
+The synchronization process imports and updates the following entities:
+
+### 1. Teachers
+- External ID (unique identifier from source system)
+- First name, paternal surname, and maternal surname
+- Creates new teacher records if they don't exist
+
+### 2. Subjects
+- External ID (unique identifier from source system)  
+- Subject name
+- Academic term (cuatrimestre)
+- Credits
+- Associated career ID
+- Creates new subject records if they don't exist
+
+### 3. Academic Groups
+- Links subjects with teachers for specific periods
+- Period (academic term identifier)
+- Group identifier
+- Schedule information (JSON format)
+- Maximum capacity
+- Updates existing groups or creates new ones
+
+## Process Details
+
+1. Connects to external API endpoint: `http://127.0.0.1:8000/api-externa-mock/carga-academica`
+2. Retrieves academic workload data
+3. For each record:
+   - Checks if teacher exists (by `external_id`), creates if not found
+   - Checks if subject exists (by `external_id`), creates if not found
+   - Checks if academic group exists, updates or creates as needed
+4. Commits all changes to the database
+5. Returns success message with processing status
+
+## Response
+
+<ResponseField name="mensaje" type="string" required>
+  Confirmation message indicating the synchronization was triggered successfully
+</ResponseField>
+
+## Example Request
+
+```bash
+curl -X POST "http://localhost:8000/sincronizacion/ejecutar" \
+  -H "accept: application/json"
+```
+
+## Example Response
+
+```json
+{
+  "mensaje": "Sincronización manual disparada con éxito. Revisa la consola."
+}
+```
+
+## Console Output
+
+The synchronization process logs detailed information to the server console:
+
+```
+✅ Sincronización Automática Exitosa: 45 registros procesados.
+```
+
+Or in case of errors:
+
+```
+❌ Error: API de Docentes no disponible
+❌ Error en Sincronización Automática: [error details]
+```
+
+## Error Handling
+
+- If the external API is unavailable (non-200 response), the sync stops and logs an error
+- Database operations are wrapped in try-catch blocks
+- The database connection is properly closed in the finally block
+- Individual errors are logged but don't stop the entire process
+
+## Use Cases
+
+- Manually refresh academic data when automatic sync is disabled
+- Force immediate sync after external system updates
+- Troubleshoot synchronization issues by triggering on-demand
+- Initialize the system with academic data for a new term
+
+## Best Practices
+
+- Run during off-peak hours to minimize database load
+- Monitor console logs to verify successful processing
+- Ensure external API is accessible before triggering
+- Consider running test synchronization in staging environment first

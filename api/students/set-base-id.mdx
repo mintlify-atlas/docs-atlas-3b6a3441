@@ -1,0 +1,198 @@
+---
+title: 'Set Base Enrollment ID'
+api: 'POST /alumnos/set-base-id'
+description: 'Configure the base enrollment number for the system by creating a dummy student record'
+---
+
+This endpoint sets the base enrollment number for the student system by creating a special "dummy" student record with "baja" (inactive) status. This record establishes the starting point for auto-generated enrollment numbers.
+
+## Request Body (form-data)
+
+<ParamField body="nueva_matricula" type="string" required>
+  The base enrollment number to set
+  - Must be exactly 8 numeric digits
+  - Cannot already exist in the system
+  - Example: "20240001"
+</ParamField>
+
+## Response
+
+<ResponseField name="message" type="string">
+  Success message confirming the base enrollment number was set
+</ResponseField>
+
+## Example Request
+
+```bash cURL
+curl -X POST "https://api.example.com/alumnos/set-base-id" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "nueva_matricula=20240001"
+```
+
+```python Python
+import requests
+
+url = "https://api.example.com/alumnos/set-base-id"
+data = {"nueva_matricula": "20240001"}
+
+response = requests.post(url, data=data)
+print(response.json())
+```
+
+```javascript JavaScript
+const formData = new FormData();
+formData.append('nueva_matricula', '20240001');
+
+fetch('https://api.example.com/alumnos/set-base-id', {
+  method: 'POST',
+  body: formData
+})
+.then(response => response.json())
+.then(data => console.log(data));
+```
+
+## Example Response
+
+```json
+{
+  "message": "Matrícula base actualizada correctamente a: 20240001"
+}
+```
+
+## How It Works
+
+1. **Validation**: Verifies the enrollment number is exactly 8 numeric digits
+2. **Duplicate Check**: Ensures the enrollment number doesn't already exist
+3. **Dummy Record Creation**: Creates a special student record with:
+   - **Enrollment**: The specified base enrollment number
+   - **Name**: "REGISTRO BASE SISTEMA"
+   - **CURP**: "BASE" + enrollment number (e.g., "BASE20240001")
+   - **Email**: "base@sistema.com"
+   - **Status**: "baja" (inactive)
+   - **Semester**: 1
+   - **Average**: 0
+   - **Career**: First career in system (or ID 1)
+   - **Origin School**: First school in system (or ID 1)
+
+4. **Impact**: Subsequent student registrations will auto-generate enrollment numbers starting from this base + 1
+
+## Use Cases
+
+### Initial System Setup
+
+When setting up the system for a new academic year:
+
+```bash
+# Set base enrollment for 2024
+curl -X POST "https://api.example.com/alumnos/set-base-id" \
+  -d "nueva_matricula=20240000"
+```
+
+Next registered student will get: `20240001`
+
+### Changing Enrollment Format
+
+When changing to a new enrollment numbering scheme:
+
+```bash
+# Switch to new format starting at 20250001
+curl -X POST "https://api.example.com/alumnos/set-base-id" \
+  -d "nueva_matricula=20250000"
+```
+
+Next registered student will get: `20250001`
+
+## Error Responses
+
+<ResponseField name="400" type="Bad Request">
+  Invalid format or enrollment number already exists
+</ResponseField>
+
+<ResponseField name="500" type="Internal Server Error">
+  Database error during dummy record creation
+</ResponseField>
+
+```json Invalid Format
+{
+  "detail": "La matrícula base debe tener exactamente 8 dígitos numéricos."
+}
+```
+
+```json Duplicate Enrollment
+{
+  "detail": "Esta matrícula ya existe en el sistema."
+}
+```
+
+```json Database Error
+{
+  "detail": "Error al fijar ID: Connection timeout"
+}
+```
+
+## Validation Rules
+
+### Format Validation
+
+- Must be exactly 8 characters
+- All characters must be numeric digits (0-9)
+- Examples:
+  - Valid: "20240001", "12345678", "00000001"
+  - Invalid: "2024001" (7 digits), "202400A1" (contains letter), "20240001 " (contains space)
+
+### Uniqueness Validation
+
+- The enrollment number must not exist in the `students` table
+- This includes both real students and previous dummy records
+
+## Important Notes
+
+<Warning>
+  This endpoint creates a permanent record in the database. The dummy student record cannot be automatically deleted.
+</Warning>
+
+<Info>
+  The dummy record uses the "baja" (inactive) status to differentiate it from real students. It should not interfere with normal operations.
+</Info>
+
+<Tip>
+  Set the base enrollment one number below where you want real enrollments to start. For example, if you want the first real student to be "20240001", set the base to "20240000".
+</Tip>
+
+## Transaction Safety
+
+The operation is wrapped in a database transaction:
+- If an error occurs during dummy record creation, changes are rolled back
+- Ensures the base enrollment is only set if the operation fully succeeds
+
+## System Impact
+
+After calling this endpoint:
+
+1. **Auto-generation**: The `/alumnos/register` endpoint will query for the maximum enrollment and increment from this base
+2. **Sequence**: Enrollment numbers will follow sequential order from this point
+3. **Gaps**: If you set a base ID that creates a gap in the sequence, those numbers are skipped
+
+## Example Workflow
+
+```bash
+# Step 1: Set base enrollment for new academic year
+curl -X POST "https://api.example.com/alumnos/set-base-id" \
+  -d "nueva_matricula=20240000"
+
+# Response: {"message": "Matrícula base actualizada correctamente a: 20240000"}
+
+# Step 2: Register first student
+curl -X POST "https://api.example.com/alumnos/register" \
+  -F 'student_data={...}' \
+  -F "foto_perfil=@photo.jpg"
+
+# Response: {"status": "success", "matricula": "20240001", ...}
+
+# Step 3: Register second student
+curl -X POST "https://api.example.com/alumnos/register" \
+  -F 'student_data={...}' \
+  -F "foto_perfil=@photo.jpg"
+
+# Response: {"status": "success", "matricula": "20240002", ...}
+```

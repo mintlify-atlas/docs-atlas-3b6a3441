@@ -1,0 +1,105 @@
+---
+title: 'Login'
+api: 'POST /auth/login'
+description: 'Authenticate a user with their identifier or email and password'
+---
+
+## Overview
+
+The login endpoint authenticates users using their identifier (ID) or email along with their password. Upon successful authentication, it returns user details and updates the user's last login timestamp.
+
+This endpoint supports login using either:
+- User identifier (ID)
+- Email address
+
+## Request Body
+
+<ParamField body="identifier" type="string" required>
+  User identifier (ID) or email address. The system will check both fields to find a matching user.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  User's password for authentication.
+</ParamField>
+
+## Response
+
+<ResponseField name="identifier" type="string">
+  The user's unique identifier.
+</ResponseField>
+
+<ResponseField name="role" type="object">
+  User's role information.
+  
+  <ResponseField name="id" type="integer">
+    Role ID.
+  </ResponseField>
+  
+  <ResponseField name="name" type="string">
+    Role name.
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="is_temp_password" type="boolean">
+  Indicates whether the user is using a temporary password that should be changed.
+</ResponseField>
+
+## Behavior
+
+- The endpoint accepts either an identifier or email in the `identifier` field
+- Compares the provided password against the stored password hash
+- Updates the `last_login` timestamp to the current UTC time upon successful authentication
+- Returns a generic error message for security (doesn't reveal whether identifier or password was incorrect)
+
+## Request Example
+
+```bash
+curl -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "identifier": "USR001",
+    "password": "mySecurePassword123"
+  }'
+```
+
+Or login with email:
+
+```bash
+curl -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "identifier": "user@example.com",
+    "password": "mySecurePassword123"
+  }'
+```
+
+## Response Example
+
+### Success Response (200 OK)
+
+```json
+{
+  "identifier": "USR001",
+  "role": {
+    "id": 2,
+    "name": "teacher"
+  },
+  "is_temp_password": false
+}
+```
+
+### Error Response (401 Unauthorized)
+
+```json
+{
+  "detail": "ID o contraseña incorrectos"
+}
+```
+
+## Error Codes
+
+| Status Code | Description |
+|-------------|-------------|
+| 200 | Login successful |
+| 401 | Invalid identifier/email or password |
+| 422 | Validation error (missing required fields) |

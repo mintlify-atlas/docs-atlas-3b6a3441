@@ -1,0 +1,224 @@
+---
+title: 'Get Student Details'
+api: 'GET /alumnos/detalle/{matricula}'
+description: 'Retrieve detailed information for a specific student including personal data, address, and file references'
+---
+
+This endpoint returns comprehensive information about a student including their personal details, address, status, and references to uploaded files (profile photo and certificate).
+
+## Path Parameters
+
+<ParamField path="matricula" type="string" required>
+  Student's enrollment number (8-digit identifier)
+</ParamField>
+
+## Response
+
+<ResponseField name="student" type="object">
+  Student's personal and academic information
+  
+  <ResponseField name="matricula" type="string">
+    Student enrollment number
+  </ResponseField>
+  
+  <ResponseField name="nombre" type="string">
+    First name
+  </ResponseField>
+  
+  <ResponseField name="apellido_paterno" type="string">
+    Paternal surname
+  </ResponseField>
+  
+  <ResponseField name="apellido_materno" type="string">
+    Maternal surname
+  </ResponseField>
+  
+  <ResponseField name="curp" type="string">
+    CURP (18-character unique identifier)
+  </ResponseField>
+  
+  <ResponseField name="email_personal" type="string">
+    Personal email address
+  </ResponseField>
+  
+  <ResponseField name="email_institucional" type="string">
+    Institutional email address (@red.unid.mx)
+  </ResponseField>
+  
+  <ResponseField name="career_id" type="integer">
+    ID of the student's career/program
+  </ResponseField>
+  
+  <ResponseField name="origin_school_id" type="integer">
+    ID of the student's origin school
+  </ResponseField>
+  
+  <ResponseField name="promedio_procedencia" type="integer | string">
+    Previous school average grade (integer) or empty string if not set
+  </ResponseField>
+  
+  <ResponseField name="status_id" type="integer">
+    Student status ID
+  </ResponseField>
+  
+  <ResponseField name="status" type="string | null">
+    Student status name (e.g., "activo", "baja", "egresado")
+  </ResponseField>
+  
+  <ResponseField name="foto_id" type="integer | null">
+    File ID of the profile photo
+  </ResponseField>
+  
+  <ResponseField name="foto_nombre" type="string | null">
+    Filename of the profile photo
+  </ResponseField>
+  
+  <ResponseField name="certificado_id" type="integer | null">
+    File ID of the certificate
+  </ResponseField>
+  
+  <ResponseField name="certificado_nombre" type="string | null">
+    Filename of the certificate
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="address" type="object">
+  Student's address information
+  
+  <ResponseField name="calle" type="string">
+    Street name (empty string if not set)
+  </ResponseField>
+  
+  <ResponseField name="numero_domicilio" type="string">
+    House/building number (empty string if not set)
+  </ResponseField>
+  
+  <ResponseField name="colonia" type="string">
+    Neighborhood (empty string if not set)
+  </ResponseField>
+  
+  <ResponseField name="codigo_postal" type="string">
+    ZIP code (empty string if not set)
+  </ResponseField>
+  
+  <ResponseField name="municipio" type="string">
+    Municipality (empty string if not set)
+  </ResponseField>
+  
+  <ResponseField name="estado" type="string">
+    State (empty string if not set)
+  </ResponseField>
+</ResponseField>
+
+## Example Request
+
+```bash cURL
+curl -X GET "https://api.example.com/alumnos/detalle/20240001" \
+  -H "Content-Type: application/json"
+```
+
+```python Python
+import requests
+
+url = "https://api.example.com/alumnos/detalle/20240001"
+response = requests.get(url)
+print(response.json())
+```
+
+```javascript JavaScript
+fetch('https://api.example.com/alumnos/detalle/20240001')
+  .then(response => response.json())
+  .then(data => console.log(data));
+```
+
+## Example Response
+
+```json
+{
+  "student": {
+    "matricula": "20240001",
+    "nombre": "Juan",
+    "apellido_paterno": "Pérez",
+    "apellido_materno": "García",
+    "curp": "PEGJ950615HCCRNN09",
+    "email_personal": "juan.perez@gmail.com",
+    "email_institucional": "juan.perez@red.unid.mx",
+    "career_id": 1,
+    "origin_school_id": 5,
+    "promedio_procedencia": 8,
+    "status_id": 1,
+    "status": "activo",
+    "foto_id": 123,
+    "foto_nombre": "juan_perez_photo.jpg",
+    "certificado_id": 124,
+    "certificado_nombre": "juan_perez_certificate.pdf"
+  },
+  "address": {
+    "calle": "Av. Principal",
+    "numero_domicilio": "123",
+    "colonia": "Centro",
+    "codigo_postal": "24000",
+    "municipio": "Campeche",
+    "estado": "Campeche"
+  }
+}
+```
+
+## Example Response (No Address)
+
+```json
+{
+  "student": {
+    "matricula": "20240002",
+    "nombre": "María",
+    "apellido_paterno": "González",
+    "apellido_materno": "López",
+    "curp": "GOLM990515MCCLPR08",
+    "email_personal": "maria.gonzalez@gmail.com",
+    "email_institucional": null,
+    "career_id": 2,
+    "origin_school_id": 3,
+    "promedio_procedencia": "",
+    "status_id": 1,
+    "status": "activo",
+    "foto_id": null,
+    "foto_nombre": null,
+    "certificado_id": null,
+    "certificado_nombre": null
+  },
+  "address": {
+    "calle": "",
+    "numero_domicilio": "",
+    "colonia": "",
+    "codigo_postal": "",
+    "municipio": "",
+    "estado": ""
+  }
+}
+```
+
+## Use Cases
+
+1. **Edit Student Form**: Populate form fields with current student information
+2. **Student Profile Display**: Show complete student information
+3. **File Downloads**: Use `foto_id` and `certificado_id` to download files via `/alumnos/archivos/{file_id}`
+4. **Data Verification**: Verify student data before updates
+
+## Error Responses
+
+<ResponseField name="404" type="Not Found">
+  Student with the specified enrollment number does not exist
+</ResponseField>
+
+```json Error Response
+{
+  "detail": "Alumno no encontrado"
+}
+```
+
+## Notes
+
+- Address fields return empty strings if no address record exists
+- File-related fields (`foto_id`, `foto_nombre`, `certificado_id`, `certificado_nombre`) return `null` if no files are uploaded
+- `promedio_procedencia` returns empty string if not set, otherwise returns integer value
+- `status` field returns `null` if the student's status relationship is not found

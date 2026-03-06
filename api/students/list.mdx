@@ -1,0 +1,110 @@
+---
+title: 'List Students'
+api: 'GET /alumnos/listado'
+description: 'Retrieve a paginated list of students with optional filtering by search term, career, and semester'
+---
+
+This endpoint returns a paginated list of students with their basic information including enrollment number, full name, career, and status. Supports filtering by search term (enrollment or name), career ID, and semester.
+
+## Query Parameters
+
+<ParamField query="skip" type="integer" default="0">
+  Number of records to skip for pagination
+</ParamField>
+
+<ParamField query="limit" type="integer" default="10">
+  Maximum number of records to return
+</ParamField>
+
+<ParamField query="busqueda" type="string">
+  Search term to filter by enrollment number or student name
+  - Minimum length: 3 characters
+  - Maximum length: 50 characters
+  - Pattern: alphanumeric with Spanish characters (a-z, A-Z, 0-9, á, é, í, ó, ú, ñ, spaces)
+</ParamField>
+
+<ParamField query="carrera_id" type="integer">
+  Filter students by specific career ID
+</ParamField>
+
+<ParamField query="cuatrimestre" type="integer">
+  Filter students by semester number (1-10)
+</ParamField>
+
+## Response
+
+<ResponseField name="total" type="integer">
+  Total number of students matching the filters
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of student objects
+  <ResponseField name="matricula" type="string">
+    Student enrollment number (8 digits)
+  </ResponseField>
+  <ResponseField name="nombre_completo" type="string">
+    Student's full name (first name + paternal surname + maternal surname)
+  </ResponseField>
+  <ResponseField name="carrera" type="string">
+    Name of the student's career/program
+  </ResponseField>
+  <ResponseField name="estatus" type="string">
+    Current student status (e.g., "activo", "baja", "egresado")
+  </ResponseField>
+</ResponseField>
+
+## Example Request
+
+```bash cURL
+curl -X GET "https://api.example.com/alumnos/listado?skip=0&limit=10&busqueda=Juan&carrera_id=1" \
+  -H "Content-Type: application/json"
+```
+
+```python Python
+import requests
+
+url = "https://api.example.com/alumnos/listado"
+params = {
+    "skip": 0,
+    "limit": 10,
+    "busqueda": "Juan",
+    "carrera_id": 1
+}
+
+response = requests.get(url, params=params)
+print(response.json())
+```
+
+## Example Response
+
+```json
+{
+  "total": 2,
+  "data": [
+    {
+      "matricula": "20240001",
+      "nombre_completo": "Juan Pérez García",
+      "carrera": "Ingeniería en Sistemas",
+      "estatus": "activo"
+    },
+    {
+      "matricula": "20240015",
+      "nombre_completo": "Juan López Martínez",
+      "carrera": "Ingeniería en Sistemas",
+      "estatus": "activo"
+    }
+  ]
+}
+```
+
+## Error Responses
+
+<ResponseField name="400" type="Bad Request">
+  Invalid query parameters (e.g., search term too short or invalid pattern)
+</ResponseField>
+
+```json Error Response Example
+{
+  "detail": "Invalid search pattern"
+}
+```
