@@ -1,0 +1,120 @@
+{
+  "projectType": "saas",
+  "projectName": "SESA - Sistema de Evaluación y Seguimiento Académico",
+  "projectDescription": "Full-stack academic management platform for Universidad Interamericana para el Desarrollo that automates student tracking, digitalizes evaluation processes, and provides real-time academic progress information.",
+  "theme": "linden",
+  "primaryColor": "#4f46e5",
+  "lightColor": "#818cf8",
+  "darkColor": "#3730a3",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "architecture"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/student-management",
+              "features/authentication",
+              "features/bulk-import",
+              "features/file-management",
+              "features/data-synchronization"
+            ]
+          },
+          {
+            "group": "User Guides",
+            "pages": [
+              "guides/administrator-guide",
+              "guides/student-portal",
+              "guides/password-management"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "development/setup",
+              "development/database-schema",
+              "development/frontend-structure",
+              "development/backend-structure"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Authentication",
+            "pages": [
+              "api/auth/login",
+              "api/auth/change-password"
+            ]
+          },
+          {
+            "group": "Student Management",
+            "pages": [
+              "api/students/list",
+              "api/students/register",
+              "api/students/import",
+              "api/students/details",
+              "api/students/update",
+              "api/students/set-base-id"
+            ]
+          },
+          {
+            "group": "Catalogs",
+            "pages": [
+              "api/catalogs/student-status",
+              "api/catalogs/options"
+            ]
+          },
+          {
+            "group": "Synchronization",
+            "pages": [
+              "api/sync/manual-sync"
+            ]
+          },
+          {
+            "group": "Files",
+            "pages": [
+              "api/files/get-file"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Student registration and profile management with photo and certificate uploads",
+    "Bulk student import from Excel with comprehensive validation",
+    "Role-based authentication system (administrators, teachers, students)",
+    "Automated academic data synchronization from external systems",
+    "Real-time student tracking with status management",
+    "Email notifications for new student accounts",
+    "Student search and filtering by career and semester",
+    "Password management with temporary password support",
+    "File storage and retrieval for student documents"
+  ],
+  "publicApiSurface": [
+    "POST /auth/login - User authentication",
+    "PUT /auth/change-password - Password update",
+    "GET /alumnos/listado - List students with pagination and filters",
+    "POST /alumnos/register - Register new student",
+    "POST /alumnos/importar - Bulk import students from Excel",
+    "GET /alumnos/detalle/{matricula} - Get student details",
+    "PUT /alumnos/actualizar/{matricula} - Update student information",
+    "POST /alumnos/set-base-id - Configure base student ID",
+    "GET /alumnos/options - Get form options (careers, schools)",
+    "GET /alumnos/archivos/{file_id} - Download student files",
+    "GET /catalogos/estatus - Get student status catalog",
+    "POST /sincronizacion/ejecutar - Trigger manual data synchronization"
+  ]
+}
